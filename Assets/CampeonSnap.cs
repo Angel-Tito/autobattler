@@ -1,0 +1,224 @@
+using UnityEngine;
+using System.Collections;
+
+public class CampeonSnap : MonoBehaviour
+{
+    [Header("Configuración")]
+    public GridManager tablero;
+    public float alturaFlote      = 0.5f;
+    public float tiempoSnap       = 0.08f;
+    public float margenSuperficie = 0.002f;
+
+    [Header("Feedback Visual")]
+    public Material materialBrillante;
+    private Material  materialOriginal;
+    private Transform celdaIluminadaActual;
+
+    private bool    estaAgarrado = false;
+    private Vector3 offsetRaton;
+    private Camera  camaraPrincipal;
+    private Vector3 posicionAnterior;
+
+    private CapsuleCollider _capsuleCollider;
+    private Rigidbody       _rb;
+
+    // ─────────────────────────────────────────────────────
+    void Start()
+    {
+        camaraPrincipal  = Camera.main;
+        _capsuleCollider = GetComponent<CapsuleCollider>();
+        _rb              = GetComponent<Rigidbody>();
+        posicionAnterior = transform.position;
+
+        if (_capsuleCollider == null)
+            Debug.LogWarning($"[CampeonSnap] {name}: sin CapsuleCollider.");
+        if (tablero == null)
+            Debug.LogWarning($"[CampeonSnap] {name}: campo 'tablero' no asignado.");
+
+        // Conectar eventos VR automáticamente (RNF05, RF01)
+        Oculus.Interaction.PointableUnityEventWrapper wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+        if (wrapper != null)
+        {
+            wrapper.WhenHover.AddListener((evt) => HoverPiezaVR());
+            wrapper.WhenSelect.AddListener((evt) => AgarrarPiezaVR());
+            wrapper.WhenUnselect.AddListener((evt) => SoltarPiezaVR());
+        }
+    }
+
+    // ─────────────────────────────────────────────────────
+    // pivot.y correcto: pies de la cápsula sobre surfaceY + margen
+    // ─────────────────────────────────────────────────────
+    float CalcularPivotY(float surfaceY)
+    {
+        if (_capsuleCollider == null) return surfaceY + margenSuperficie;
+        float sy = transform.lossyScale.y;
+        return surfaceY
+             - _capsuleCollider.center.y * sy
+             + (_capsuleCollider.height  * sy) / 2f
+             + margenSuperficie;
+    }
+
+    // ─────────────────────────────────────────────────────
+    // VR — Meta SDK dispara estos métodos via PointableUnityEventWrapper
+    // ─────────────────────────────────────────────────────
+    public void HoverPiezaVR()
+    {
+        // Patrón 1: pulso de proximidad al acercar la mano (Hover - RNF05)
+        HapticFeedback.Instance?.PulsoProximidad();
+    }
+
+    public void AgarrarPiezaVR()
+    {
+        estaAgarrado     = true;
+        posicionAnterior = transform.position;
+    }
+
+    public void SoltarPiezaVR()
+    {
+        estaAgarrado = false;
+        ApagarCeldaAnterior();
+
+        if (tablero == null) return;
+
+        Transform celdaDestino = tablero.ObtenerCeldaMasCercana(transform.position);
+
+        if (celdaDestino != null)
+        {
+            Collider colCelda = celdaDestino.GetComponent<Collider>();
+            if (colCelda == null)
+            {
+                Debug.LogWarning($"[CampeonSnap] {celdaDestino.name} no tiene Collider.");
+                StartCoroutine(MoverHaciaCelda(posicionAnterior));
+                return;
+            }
+
+            float   surfaceY = colCelda.bounds.max.y;
+            float   pivotY   = CalcularPivotY(surfaceY);
+            Vector3 destino  = new Vector3(
+                colCelda.bounds.center.x,
+                pivotY,
+                colCelda.bounds.center.z);
+
+            posicionAnterior = destino;
+
+            // Patrón 2: pulso de confirmación al colocar en celda (RNF05)
+            HapticFeedback.Instance?.PulsoColocacion();
+
+            StartCoroutine(MoverHaciaCelda(destino));
+        }
+        else
+        {
+            // Fuera de zona válida → regresa sin pulso de confirmación
+            Debug.Log($"[CampeonSnap] {name}: fuera de zona, regresa a {posicionAnterior}");
+            StartCoroutine(MoverHaciaCelda(posicionAnterior));
+        }
+    }
+
+    // ─────────────────────────────────────────────────────
+    // Interpolación EaseOut 80ms + activación de física limpia
+    // ─────────────────────────────────────────────────────
+    IEnumerator MoverHaciaCelda(Vector3 destino)
+    {
+        if (_rb != null)
+        {
+            // Limpiar velocidades ANTES de activar isKinematic.
+            // Unity no permite setear velocity en un Rigidbody kinematic → warning.
+            _rb.velocity               = Vector3.zero;
+            _rb.angularVelocity        = Vector3.zero;
+            _rb.isKinematic            = true;
+            _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        }
+
+        Vector3 inicio       = transform.position;
+        float   tiempoPasado = 0f;
+
+        while (tiempoPasado < tiempoSnap)
+        {
+            tiempoPasado += Time.deltaTime;
+            float t = Mathf.Clamp01(tiempoPasado / tiempoSnap);
+            t = 1f - (1f - t) * (1f - t); // EaseOut
+            transform.position = Vector3.Lerp(inicio, destino, t);
+            yield return null;
+        }
+
+        transform.position = destino;
+        yield return new WaitForFixedUpdate();
+
+        if (_rb != null)
+            _rb.isKinematic = false;
+    }
+
+    // ─────────────────────────────────────────────────────
+    // Feedback visual — iluminación de celda al arrastrar
+    // ─────────────────────────────────────────────────────
+    void LateUpdate()
+    {
+        // Pase lo que pase, forzamos a que el modelo se mantenga recto (ignora inclinación de la mano)
+        Vector3 rot = transform.eulerAngles;
+        rot.x = 0;
+        rot.z = 0;
+        transform.eulerAngles = rot;
+    }
+
+    void Update()
+    {
+        if (!estaAgarrado || tablero == null) return;
+
+        Transform celdaDestino = tablero.ObtenerCeldaMasCercana(transform.position);
+        if (celdaDestino != celdaIluminadaActual)
+        {
+            ApagarCeldaAnterior();
+            IluminarNuevaCelda(celdaDestino);
+        }
+    }
+
+    void IluminarNuevaCelda(Transform nuevaCelda)
+    {
+        if (nuevaCelda == null) return;
+        MeshRenderer mr = nuevaCelda.GetComponent<MeshRenderer>();
+        if (mr == null) return;
+
+        // sharedMaterial para guardar el original sin crear instancias (evita memory leak en Edit Mode)
+        materialOriginal     = mr.sharedMaterial;
+        mr.enabled           = true;
+        mr.material          = materialBrillante; // instancia solo en Play Mode → correcto
+        celdaIluminadaActual = nuevaCelda;
+    }
+
+    void ApagarCeldaAnterior()
+    {
+        if (celdaIluminadaActual == null) return;
+        MeshRenderer mr = celdaIluminadaActual.GetComponent<MeshRenderer>();
+        if (mr != null)
+        {
+            mr.sharedMaterial = materialOriginal; // restaura sin instanciar
+            mr.enabled        = false;
+        }
+        celdaIluminadaActual = null;
+    }
+
+    // ─────────────────────────────────────────────────────
+    // Hack temporal de ratón (Editor sin headset)
+    // ─────────────────────────────────────────────────────
+    void OnMouseDown()
+    {
+        AgarrarPiezaVR();
+        transform.position += Vector3.up * alturaFlote;
+        offsetRaton = transform.position - ObtenerPosicionRaton3D();
+    }
+
+    void OnMouseDrag()
+    {
+        if (estaAgarrado)
+            transform.position = ObtenerPosicionRaton3D() + offsetRaton;
+    }
+
+    void OnMouseUp() => SoltarPiezaVR();
+
+    Vector3 ObtenerPosicionRaton3D()
+    {
+        Vector3 p = Input.mousePosition;
+        p.z = camaraPrincipal.WorldToScreenPoint(transform.position).z;
+        return camaraPrincipal.ScreenToWorldPoint(p);
+    }
+}
