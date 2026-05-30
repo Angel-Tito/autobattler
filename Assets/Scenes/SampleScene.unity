@@ -2955,6 +2955,7 @@ GameObject:
   - component: {fileID: 433035702}
   - component: {fileID: 433035701}
   - component: {fileID: 433035709}
+  - component: {fileID: 433035710}
   m_Layer: 0
   m_Name: Ficha_atroxx
   m_TagString: Untagged
@@ -3055,10 +3056,34 @@ MonoBehaviour:
       m_Calls: []
   _whenHover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 433035710}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverEnter
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenUnhover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 433035710}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverExit
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenSelect:
     m_PersistentCalls:
       m_Calls:
@@ -3201,6 +3226,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.14999996, y: 0.5008723, z: 0.14999996}
   m_Center: {x: 0, y: -0.2764362, z: 0}
+--- !u!114 &433035710
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 433035700}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5380e48047eaf484bae7d06a1fd0c790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  auraColor: {r: 1, g: 0.75, b: 0, a: 1}
+  auraIntensity: 1.2
+  pulseEnabled: 1
+  pulseSpeed: 2
 --- !u!1 &434406650
 GameObject:
   m_ObjectHideFlags: 0
@@ -11669,6 +11710,7 @@ GameObject:
   - component: {fileID: 1512159308}
   - component: {fileID: 1512159307}
   - component: {fileID: 1512159309}
+  - component: {fileID: 1512159310}
   m_Layer: 0
   m_Name: Ficha_ashe
   m_TagString: Untagged
@@ -11779,10 +11821,34 @@ MonoBehaviour:
       m_Calls: []
   _whenHover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1512159310}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverEnter
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenUnhover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1512159310}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverExit
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenSelect:
     m_PersistentCalls:
       m_Calls:
@@ -11915,6 +11981,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.15, y: 0.22, z: 0.15}
   m_Center: {x: 0, y: -0.136, z: 0}
+--- !u!114 &1512159310
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1512159300}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5380e48047eaf484bae7d06a1fd0c790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  auraColor: {r: 1, g: 0.75, b: 0, a: 1}
+  auraIntensity: 1.2
+  pulseEnabled: 1
+  pulseSpeed: 2
 --- !u!1 &1522569175
 GameObject:
   m_ObjectHideFlags: 0
@@ -11993,6 +12075,7 @@ GameObject:
   - component: {fileID: 1542087433}
   - component: {fileID: 1542087432}
   - component: {fileID: 1542087440}
+  - component: {fileID: 1542087441}
   m_Layer: 0
   m_Name: Ficha_mordekaiser
   m_TagString: Untagged
@@ -12093,10 +12176,34 @@ MonoBehaviour:
       m_Calls: []
   _whenHover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1542087441}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverEnter
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenUnhover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1542087441}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverExit
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenSelect:
     m_PersistentCalls:
       m_Calls:
@@ -12239,6 +12346,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.15, y: 0.46396583, z: 0.19464171}
   m_Center: {x: 0.000000015388329, y: -0.257983, z: 0.02232313}
+--- !u!114 &1542087441
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1542087431}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5380e48047eaf484bae7d06a1fd0c790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  auraColor: {r: 1, g: 0.75, b: 0, a: 1}
+  auraIntensity: 1.2
+  pulseEnabled: 1
+  pulseSpeed: 2
 --- !u!1 &1559979729
 GameObject:
   m_ObjectHideFlags: 0
@@ -12441,6 +12564,7 @@ GameObject:
   - component: {fileID: 1584233123}
   - component: {fileID: 1584233122}
   - component: {fileID: 1584233130}
+  - component: {fileID: 1584233131}
   m_Layer: 0
   m_Name: Ficha_akali
   m_TagString: Untagged
@@ -12541,10 +12665,34 @@ MonoBehaviour:
       m_Calls: []
   _whenHover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1584233131}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverEnter
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenUnhover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1584233131}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverExit
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenSelect:
     m_PersistentCalls:
       m_Calls:
@@ -12687,6 +12835,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.15, y: 0.4758538, z: 0.15}
   m_Center: {x: 0, y: -0.26392698, z: 0}
+--- !u!114 &1584233131
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1584233121}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5380e48047eaf484bae7d06a1fd0c790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  auraColor: {r: 1, g: 0.75, b: 0, a: 1}
+  auraIntensity: 1.2
+  pulseEnabled: 1
+  pulseSpeed: 2
 --- !u!1 &1589672266
 GameObject:
   m_ObjectHideFlags: 0
@@ -15452,6 +15616,7 @@ GameObject:
   - component: {fileID: 2049895515}
   - component: {fileID: 2049895514}
   - component: {fileID: 2049895522}
+  - component: {fileID: 2049895523}
   m_Layer: 0
   m_Name: Ficha_aurora
   m_TagString: Untagged
@@ -15552,10 +15717,34 @@ MonoBehaviour:
       m_Calls: []
   _whenHover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 2049895523}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverEnter
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenUnhover:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 2049895523}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: OnHoverExit
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   _whenSelect:
     m_PersistentCalls:
       m_Calls:
@@ -15698,6 +15887,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.15, y: 0.37297213, z: 0.15}
   m_Center: {x: 0, y: -0.21248601, z: 0}
+--- !u!114 &2049895523
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2049895513}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5380e48047eaf484bae7d06a1fd0c790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  auraColor: {r: 1, g: 0.75, b: 0, a: 1}
+  auraIntensity: 1.2
+  pulseEnabled: 1
+  pulseSpeed: 2
 --- !u!1 &2052359893
 GameObject:
   m_ObjectHideFlags: 0
