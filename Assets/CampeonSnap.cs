@@ -19,19 +19,19 @@ public class CampeonSnap : MonoBehaviour
     private Camera  camaraPrincipal;
     private Vector3 posicionAnterior;
 
-    private CapsuleCollider _capsuleCollider;
-    private Rigidbody       _rb;
+    private BoxCollider _boxCollider;
+    private Rigidbody  _rb;
 
     // ─────────────────────────────────────────────────────
     void Start()
     {
         camaraPrincipal  = Camera.main;
-        _capsuleCollider = GetComponent<CapsuleCollider>();
+        _boxCollider     = GetComponent<BoxCollider>();
         _rb              = GetComponent<Rigidbody>();
         posicionAnterior = transform.position;
 
-        if (_capsuleCollider == null)
-            Debug.LogWarning($"[CampeonSnap] {name}: sin CapsuleCollider.");
+        if (_boxCollider == null)
+            Debug.LogWarning($"[CampeonSnap] {name}: sin BoxCollider.");
         if (tablero == null)
             Debug.LogWarning($"[CampeonSnap] {name}: campo 'tablero' no asignado.");
 
@@ -46,16 +46,17 @@ public class CampeonSnap : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────
-    // pivot.y correcto: pies de la cápsula sobre surfaceY + margen
+    // pivot.y correcto: fondo del BoxCollider sobre surfaceY + margen
     // ─────────────────────────────────────────────────────
     float CalcularPivotY(float surfaceY)
     {
-        if (_capsuleCollider == null) return surfaceY + margenSuperficie;
+        if (_boxCollider == null) return surfaceY + margenSuperficie;
         float sy = transform.lossyScale.y;
-        return surfaceY
-             - _capsuleCollider.center.y * sy
-             + (_capsuleCollider.height  * sy) / 2f
-             + margenSuperficie;
+        // Fondo del box en espacio local = center.y - size.y/2
+        // Para que el fondo toque surfaceY, el pivote debe estar en:
+        // pivotY = surfaceY - (center.y - size.y/2) * sy + margen
+        float localBottom = _boxCollider.center.y - _boxCollider.size.y / 2f;
+        return surfaceY - localBottom * sy + margenSuperficie;
     }
 
     // ─────────────────────────────────────────────────────
