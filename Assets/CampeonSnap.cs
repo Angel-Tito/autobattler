@@ -21,6 +21,8 @@ public class CampeonSnap : MonoBehaviour
 
     private BoxCollider _boxCollider;
     private Rigidbody  _rb;
+    private Oculus.Interaction.PointableUnityEventWrapper _wrapper;
+
 
     // ─────────────────────────────────────────────────────
     void Start()
@@ -30,19 +32,28 @@ public class CampeonSnap : MonoBehaviour
         _rb              = GetComponent<Rigidbody>();
         posicionAnterior = transform.position;
 
+        // Eliminada la lógica de escalasIniciales recursivas que rompía el escalado del combate
+
         if (_boxCollider == null)
             Debug.LogWarning($"[CampeonSnap] {name}: sin BoxCollider.");
         if (tablero == null)
             Debug.LogWarning($"[CampeonSnap] {name}: campo 'tablero' no asignado.");
 
         // Conectar eventos VR automáticamente (RNF05, RF01)
-        Oculus.Interaction.PointableUnityEventWrapper wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
-        if (wrapper != null)
+        _wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+        if (_wrapper != null)
         {
-            wrapper.WhenHover.AddListener((evt) => HoverPiezaVR());
-            wrapper.WhenSelect.AddListener((evt) => AgarrarPiezaVR());
-            wrapper.WhenUnselect.AddListener((evt) => SoltarPiezaVR());
+            _wrapper.WhenHover.AddListener((evt) => HoverPiezaVR());
+            _wrapper.WhenSelect.AddListener((evt) => AgarrarPiezaVR());
+            _wrapper.WhenUnselect.AddListener((evt) => SoltarPiezaVR());
         }
+    }
+
+    public void BloquearInteraccion()
+    {
+        if (_wrapper != null) _wrapper.enabled = false;
+        // NO desactivar _boxCollider aquí, porque la gravedad sigue activa durante la cinemática de transición
+        // y se caerían a través del suelo.
     }
 
     // ─────────────────────────────────────────────────────
