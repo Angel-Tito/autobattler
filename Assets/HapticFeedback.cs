@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections;
 
 /// <summary>
@@ -14,6 +14,12 @@ public class HapticFeedback : MonoBehaviour
     [Range(0f, 1f)] public float frecuenciaProximidad  = 0.3f;
     [Range(0f, 1f)] public float amplitudProximidad    = 0.2f;
     public float                 duracionProximidad    = 0.08f; // 80ms
+
+    [Header("Agarre de campeon")]
+    [Range(0f, 1f)] public float frecuenciaAgarre = 0.45f;
+    [Range(0f, 1f)] public float amplitudAgarre = 0.35f;
+    public float duracionAgarre = 0.10f;
+
 
     // ── Patrón 2 — Colocación en celda (RNF05) ──────────────────────────
     // Pulso firme al confirmar snap en celda válida.
@@ -118,5 +124,15 @@ public class HapticFeedback : MonoBehaviour
     void OnDestroy()
     {
         OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.Touch);
+    }
+
+
+public void PulsoAgarre(OVRInput.Controller controllerMask = OVRInput.Controller.Touch)
+    {
+        StartCoroutine(VibrarPorTiempo(
+            frecuenciaAgarre,
+            amplitudAgarre,
+            duracionAgarre,
+            controllerMask));
     }
 }

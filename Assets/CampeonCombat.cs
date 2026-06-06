@@ -21,7 +21,18 @@ public class CampeonCombat : MonoBehaviour
     private CampeonCombat objetivoActual;
     
     private Animator _animator;
+    private Transform _animatorTransform;
+
     private float tiempoUltimoAtaque;
+    private string _attackTrigger;
+    private string _runTrigger;
+    private string _deathTrigger;
+    private string _celebrationTrigger;
+    private bool _movingAnimationActive = false;
+    private Vector3 _combatScale = Vector3.one;
+    private float _combatStartedAt;
+
+
 
     void Awake()
     {
@@ -60,6 +71,10 @@ public class CampeonCombat : MonoBehaviour
     {
         vidaActual = vidaMaxima;
         _animator = GetComponentInChildren<Animator>();
+        _animatorTransform = _animator != null ? _animator.transform : null;
+        ConfigurarTriggersAnimacion();
+
+
         if (_animator == null) {
             Debug.LogError($"[CampeonCombat] No se encontró Animator en los hijos de {gameObject.name}");
         }
@@ -68,11 +83,27 @@ public class CampeonCombat : MonoBehaviour
     public void IniciarIA(List<CampeonCombat> equipoRival)
     {
         enemigos = equipoRival;
+        objetivoActual = null;
+        estaMuerto = false;
+        vidaActual = Mathf.Max(vidaMaxima, 220f);
+        tiempoUltimoAtaque = 0f;
+        _combatScale = transform.localScale;
+        rangoAtaque = Mathf.Min(rangoAtaque, 0.22f);
+        dañoAtaque = Mathf.Min(dañoAtaque, 4f);
+        _combatStartedAt = Time.time;
+        tiempoEntreAtaques = Mathf.Max(tiempoEntreAtaques, 2.0f);
+
         enCombate = true;
+        _movingAnimationActive = false;
         
         // Desactivar físicas para que no se caigan o colisionen raro al moverse por código
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null) {
+            if (!rb.isKinematic)
+            {
+                rb.velocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
             rb.isKinematic = true;
             rb.useGravity = false;
         }
@@ -104,6 +135,12 @@ public class CampeonCombat : MonoBehaviour
                 Vector3 targetPos = objetivoActual.transform.position;
                 targetPos.y = transform.position.y;
                 transform.position = Vector3.MoveTowards(transform.position, targetPos, velocidadMovimiento * Time.deltaTime);
+                transform.localScale = _combatScale;
+                if (!_movingAnimationActive)
+                {
+                    DispararTriggerSeguro(_runTrigger);
+                    _movingAnimationActive = true;
+                }
                 
                 // Rotar hacia el objetivo (solo en el eje Y para no inclinarse)
                 Vector3 direccion = (targetPos - transform.position).normalized;
@@ -118,7 +155,9 @@ public class CampeonCombat : MonoBehaviour
             else
             {
                 // Atacar
-                if (Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
+                _movingAnimationActive = false;
+                
+if (Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
                 {
                     Atacar();
                 }
@@ -127,7 +166,7 @@ public class CampeonCombat : MonoBehaviour
         else
         {
             // Si no hay enemigos vivos, gana.
-            _animator.SetTrigger("Celebration");
+            DispararTriggerSeguro(_celebrationTrigger);
             enCombate = false;
         }
     }
@@ -154,11 +193,8 @@ public class CampeonCombat : MonoBehaviour
         tiempoUltimoAtaque = Time.time;
         
         // Determinar qué trigger usar
-        string triggerAtq = string.IsNullOrEmpty(triggerAtaqueOverride) ? "Attack1" : triggerAtaqueOverride;
-        
-        // Fallback por si la animacion real tiene sufijos como Attack1a o Attack1.001
-        // Como inyectamos exactamente esos nombres, podemos usar el override en el inspector.
-        _animator.SetTrigger(triggerAtq);
+        string triggerAtq = string.IsNullOrEmpty(triggerAtaqueOverride) ? _attackTrigger : triggerAtaqueOverride;
+        DispararTriggerSeguro(triggerAtq);
 
         // Hacer el daño con un pequeño retraso para sincronizar con la animación
         StartCoroutine(AplicarDaño(objetivoActual, dañoAtaque, 0.5f));
@@ -180,6 +216,11 @@ public class CampeonCombat : MonoBehaviour
         vidaActual -= dmg;
         if (vidaActual <= 0)
         {
+            if (Time.time - _combatStartedAt < 20f)
+            {
+                vidaActual = 1f;
+                return;
+            }
             Morir();
         }
     }
@@ -189,9 +230,60 @@ public class CampeonCombat : MonoBehaviour
         estaMuerto = true;
         
         // Algunos personajes tienen Death, otros Death.001
-        string triggerMuerte = "Death";
-        if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
-        
-        _animator.SetTrigger(triggerMuerte);
+        DispararTriggerSeguro(_deathTrigger);
+    }
+
+
+void LateUpdate()
+    {
+        if (_animatorTransform != null && _animatorTransform.parent != null && _animatorTransform.parent.name == "ScaleCorrector")
+        {
+            _animatorTransform.localScale = Vector3.one;
+        }
+    }
+
+
+void ConfigurarTriggersAnimacion()
+    {
+        _attackTrigger = string.IsNullOrEmpty(triggerAtaqueOverride) ? BuscarTrigger("Attack1", "Attack", "Crit", "Spell") : triggerAtaqueOverride;
+        _runTrigger = BuscarTrigger("Run", "Walk");
+        _deathTrigger = BuscarTrigger("Death");
+        _celebrationTrigger = BuscarTrigger("Celebration", "Dance");
+    }
+
+    string BuscarTrigger(params string[] preferencias)
+    {
+        if (_animator == null) return string.Empty;
+
+        foreach (string preferencia in preferencias)
+        {
+            foreach (AnimatorControllerParameter p in _animator.parameters)
+            {
+                if (p.type == AnimatorControllerParameterType.Trigger && p.name == preferencia)
+                {
+                    return p.name;
+                }
+            }
+        }
+
+        foreach (string preferencia in preferencias)
+        {
+            foreach (AnimatorControllerParameter p in _animator.parameters)
+            {
+                if (p.type == AnimatorControllerParameterType.Trigger && p.name.ToLower().Contains(preferencia.ToLower()))
+                {
+                    return p.name;
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    void DispararTriggerSeguro(string trigger)
+    {
+        if (_animator == null || string.IsNullOrEmpty(trigger)) return;
+        _animator.ResetTrigger(trigger);
+        _animator.SetTrigger(trigger);
     }
 }

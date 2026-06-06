@@ -8,6 +8,8 @@ public class CampeonSnap : MonoBehaviour
     public float alturaFlote      = 0.5f;
     public float tiempoSnap       = 0.08f;
     public float margenSuperficie = 0.002f;
+    public float radioColocacionLejana = 0.65f;
+
 
     [Header("Feedback Visual")]
     public Material materialBrillante;
@@ -22,6 +24,8 @@ public class CampeonSnap : MonoBehaviour
     private BoxCollider _boxCollider;
     private Rigidbody  _rb;
     private Oculus.Interaction.PointableUnityEventWrapper _wrapper;
+    private CampeonHoverFeedback _hoverFeedback;
+
 
 
     // ─────────────────────────────────────────────────────
@@ -41,9 +45,13 @@ public class CampeonSnap : MonoBehaviour
 
         // Conectar eventos VR automáticamente (RNF05, RF01)
         _wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+        _hoverFeedback = GetComponent<CampeonHoverFeedback>();
+
         if (_wrapper != null)
         {
             _wrapper.WhenHover.AddListener((evt) => HoverPiezaVR());
+            _wrapper.WhenHover.AddListener((evt) => _hoverFeedback?.OnHoverEnter());
+            _wrapper.WhenUnhover.AddListener((evt) => _hoverFeedback?.OnHoverExit());
             _wrapper.WhenSelect.AddListener((evt) => AgarrarPiezaVR());
             _wrapper.WhenUnselect.AddListener((evt) => SoltarPiezaVR());
         }
@@ -81,8 +89,10 @@ public class CampeonSnap : MonoBehaviour
 
     public void AgarrarPiezaVR()
     {
-        estaAgarrado     = true;
+        estaAgarrado = true;
         posicionAnterior = transform.position;
+        HapticFeedback.Instance?.PulsoAgarre();
+        _hoverFeedback?.OnHoverEnter();
     }
 
     public void SoltarPiezaVR()
@@ -92,7 +102,7 @@ public class CampeonSnap : MonoBehaviour
 
         if (tablero == null) return;
 
-        Transform celdaDestino = tablero.ObtenerCeldaMasCercana(transform.position);
+        Transform celdaDestino = ObtenerCeldaValidaParaColocacion();
 
         if (celdaDestino != null)
         {
@@ -135,9 +145,12 @@ public class CampeonSnap : MonoBehaviour
         {
             // Limpiar velocidades ANTES de activar isKinematic.
             // Unity no permite setear velocity en un Rigidbody kinematic → warning.
-            _rb.velocity               = Vector3.zero;
-            _rb.angularVelocity        = Vector3.zero;
-            _rb.isKinematic            = true;
+            if (!_rb.isKinematic)
+            {
+                _rb.velocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+            }
+            _rb.isKinematic = true;
             _rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
         }
 
@@ -176,7 +189,7 @@ public class CampeonSnap : MonoBehaviour
     {
         if (!estaAgarrado || tablero == null) return;
 
-        Transform celdaDestino = tablero.ObtenerCeldaMasCercana(transform.position);
+        Transform celdaDestino = ObtenerCeldaValidaParaColocacion();
         if (celdaDestino != celdaIluminadaActual)
         {
             ApagarCeldaAnterior();
@@ -190,10 +203,25 @@ public class CampeonSnap : MonoBehaviour
         MeshRenderer mr = nuevaCelda.GetComponent<MeshRenderer>();
         if (mr == null) return;
 
-        // sharedMaterial para guardar el original sin crear instancias (evita memory leak en Edit Mode)
-        materialOriginal     = mr.sharedMaterial;
-        mr.enabled           = true;
-        mr.material          = materialBrillante; // instancia solo en Play Mode → correcto
+        materialOriginal = mr.sharedMaterial;
+        mr.enabled = true;
+
+        if (materialBrillante != null)
+        {
+            mr.material = materialBrillante;
+        }
+        else
+        {
+            Material highlight = new Material(mr.material);
+            highlight.color = Color.yellow;
+            if (highlight.HasProperty("_EmissionColor"))
+            {
+                highlight.EnableKeyword("_EMISSION");
+                highlight.SetColor("_EmissionColor", Color.yellow * 1.8f);
+            }
+            mr.material = highlight;
+        }
+
         celdaIluminadaActual = nuevaCelda;
     }
 
@@ -232,5 +260,34 @@ public class CampeonSnap : MonoBehaviour
         Vector3 p = Input.mousePosition;
         p.z = camaraPrincipal.WorldToScreenPoint(transform.position).z;
         return camaraPrincipal.ScreenToWorldPoint(p);
+    }
+
+
+Transform ObtenerCeldaValidaParaColocacion()
+    {
+        if (tablero == null) return null;
+
+        Transform celda = tablero.ObtenerCeldaMasCercana(transform.position);
+        if (celda != null) return celda;
+
+        Transform mejorCelda = null;
+        float mejorDistancia = radioColocacionLejana;
+        foreach (Transform candidata in tablero.celdas)
+        {
+            if (candidata == null || !candidata.gameObject.activeInHierarchy) continue;
+            Collider col = candidata.GetComponent<Collider>();
+            if (col == null) continue;
+
+            Vector2 piezaXZ = new Vector2(transform.position.x, transform.position.z);
+            Vector2 celdaXZ = new Vector2(col.bounds.center.x, col.bounds.center.z);
+            float distancia = Vector2.Distance(piezaXZ, celdaXZ);
+            if (distancia <= mejorDistancia)
+            {
+                mejorDistancia = distancia;
+                mejorCelda = candidata;
+            }
+        }
+
+        return mejorCelda;
     }
 }

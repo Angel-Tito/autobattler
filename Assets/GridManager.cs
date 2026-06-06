@@ -8,33 +8,32 @@ public class GridManager : MonoBehaviour
     // Radio de snap en el plano XZ.
     // Celdas de 0.154m → mitad de diagonal = 0.109m.
     // 0.12m cubre toda la celda sin aceptar zonas fuera del grid.
-    public float distanciaMaximaValida = 0.12f;
+    public float distanciaMaximaValida = 0.35f;
 
     // Devuelve la celda más cercana dentro del radio de snap,
     // o null si la posición está fuera de cualquier celda.
-    public Transform ObtenerCeldaMasCercana(Vector3 posicionPieza)
+public Transform ObtenerCeldaMasCercana(Vector3 posicionPieza)
     {
         Transform celdaMasCercana = null;
-        // Ahora siempre encuentra la celda más cercana, sin importar qué tan lejos esté la pieza.
-        float     distanciaMinima = float.MaxValue;
+        float distanciaMinima = distanciaMaximaValida;
 
         Vector2 pieza2D = new Vector2(posicionPieza.x, posicionPieza.z);
 
         foreach (Transform celda in celdas)
         {
-            if (celda == null) continue;                          // slot destruido
-            if (!celda.gameObject.activeInHierarchy) continue;   // celda inactiva
+            if (celda == null) continue;
+            if (!celda.gameObject.activeInHierarchy) continue;
 
             Collider col = celda.GetComponent<Collider>();
             if (col == null) continue;
 
-            Vector2 celda2D  = new Vector2(col.bounds.center.x, col.bounds.center.z);
-            float   distancia = Vector2.Distance(pieza2D, celda2D);
+            Vector2 celda2D = new Vector2(col.bounds.center.x, col.bounds.center.z);
+            float distancia = Vector2.Distance(pieza2D, celda2D);
 
-            if (distancia < distanciaMinima)
+            if (distancia <= distanciaMinima)
             {
-                distanciaMinima  = distancia;
-                celdaMasCercana  = celda;
+                distanciaMinima = distancia;
+                celdaMasCercana = celda;
             }
         }
 

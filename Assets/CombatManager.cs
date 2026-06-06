@@ -8,7 +8,7 @@ public class CombatManager : MonoBehaviour
 
     [Header("Escala y Transición (RF06)")]
     public Transform playerRig; // El [BuildingBlock] Camera Rig
-    public float spectatorScale = 0.1f; // Hará que las piezas parezcan de 2.2 metros
+    public float spectatorScale = 1.0f; // E2: se mantiene la escala normal para que el combate no agrande a los luchadores.
     public float fadeDuration = 1.0f;
 
     [Header("Ergonomía de Cámara - Preparación (Escala 1.0)")]
@@ -16,8 +16,12 @@ public class CombatManager : MonoBehaviour
     public float prepDistanceOffset = 1.30f; // Distancia horizontal de 1.3m
 
     [Header("Ergonomía de Cámara - Combate (Escala 0.1)")]
-    public float combatHeightOffset = 0.08f; // Altura baja sobre el tablero (escala espectador)
-    public float combatDistanceOffset = 0.50f; // Colocado en el mapa (tablero)
+    public float combatHeightOffset = 0.60f; // Vista de combate cercana y por encima del tablero.
+    public float combatDistanceOffset = 1.25f; // Distancia cercana sin entrar entre los luchadores.
+    public float escalaCampeonCombate = 0.28f;
+    public float separacionEquiposCombate = 0.90f;
+    public float separacionHorizontalCombate = 0.36f;
+
 
     [Header("Animación Rúnica (RF05)")]
     public Renderer tableroRenderer;
@@ -29,6 +33,8 @@ public class CombatManager : MonoBehaviour
 
     private bool enCombate = false;
     private UnityEngine.UI.Image fadeImage;
+    private bool usarCamaraCombate = false;
+
 
     void Awake()
     {
@@ -128,19 +134,29 @@ public class CombatManager : MonoBehaviour
 
         // 3. Obtener posición local de la cámara con fallback ergonómico por si no se ha inicializado el tracking en el editor
         Vector3 localCamPos = Camera.main.transform.localPosition;
-        if (localCamPos.y < 0.1f)
+        bool previewSinTracking = localCamPos.y < 0.1f;
+        if (previewSinTracking)
         {
-            localCamPos = new Vector3(0f, 1.6f, 0f); // Altura de ojo humana estándar (1.6m)
+            localCamPos = Vector3.zero;
         }
 
         // Alinear posición para que la cámara del ojo coincida exactamente con la posición ergonómica objetivo según la fase
-        float heightOffset = (scale >= 0.9f) ? prepHeightOffset : combatHeightOffset;
-        float distanceOffset = (scale >= 0.9f) ? prepDistanceOffset : combatDistanceOffset;
+        float heightOffset = usarCamaraCombate ? combatHeightOffset : prepHeightOffset;
+        float distanceOffset = usarCamaraCombate ? combatDistanceOffset : prepDistanceOffset;
         Vector3 targetCameraPos = new Vector3(boardCenter.x, boardSurfaceY + heightOffset, boardCenter.z - distanceOffset);
 
         // Ajustar la posición del rig restándole el offset local de la cámara escalado y rotado
         Vector3 localCamPosScaled = Vector3.Scale(localCamPos, playerRig.localScale);
         playerRig.position = targetCameraPos - playerRig.rotation * localCamPosScaled;
+
+        if (previewSinTracking)
+        {
+            Vector3 lookDirection = boardCenter - targetCameraPos;
+            if (lookDirection.sqrMagnitude > 0.001f)
+            {
+                playerRig.rotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
+            }
+        }
 
         // 4. Reposicionar el CharacterController y reactivar si no estamos en escala pequeña (espectador)
         if (charController != null)
@@ -183,7 +199,9 @@ public class CombatManager : MonoBehaviour
         GameObject canvasGo = new GameObject("FadeCanvas");
         canvasGo.transform.SetParent(Camera.main.transform, false);
         Canvas canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.renderMode = RenderMode.ScreenSpaceCamera;
+        canvas.worldCamera = Camera.main;
+        canvas.planeDistance = 0.5f;
         canvas.sortingOrder = 999;
 
         GameObject imgGo = new GameObject("FadeImage");
@@ -262,7 +280,10 @@ public class CombatManager : MonoBehaviour
         // 3. Cambiar Escala (Modo espectador) y reposicionar cámara
         if (playerRig != null)
         {
+            usarCamaraCombate = true;
             AcomodarCamaraErgonomica(spectatorScale);
+            usarCamaraCombate = false;
+            PrepararFichasEnCampo();
         }
 
         // 4. Fade to Clear
@@ -282,5 +303,57 @@ public class CombatManager : MonoBehaviour
     {
         foreach(var c in equipo1) if(c != null) c.IniciarIA(equipo2);
         foreach(var c in equipo2) if(c != null) c.IniciarIA(equipo1);
+    }
+
+
+void PrepararFichasEnCampo()
+    {
+        if (tableroRenderer == null) return;
+
+        Vector3 boardCenter = tableroRenderer.bounds.center;
+        float surfaceY = tableroRenderer.bounds.max.y;
+        PosicionarEquipo(equipo1, boardCenter, surfaceY, -separacionEquiposCombate, 0f);
+        PosicionarEquipo(equipo2, boardCenter, surfaceY, separacionEquiposCombate, 180f);
+    }
+
+    void PosicionarEquipo(List<CampeonCombat> equipo, Vector3 boardCenter, float surfaceY, float zOffset, float yRotation)
+    {
+        if (equipo == null || equipo.Count == 0) return;
+
+        float spacing = separacionHorizontalCombate;
+        float startX = -spacing * (equipo.Count - 1) * 0.5f;
+
+        for (int i = 0; i < equipo.Count; i++)
+        {
+            CampeonCombat campeon = equipo[i];
+            if (campeon == null) continue;
+
+            Transform t = campeon.transform;
+            t.localScale = Vector3.one * escalaCampeonCombate;
+            Vector3 pos = new Vector3(boardCenter.x + startX + spacing * i, CalcularAlturaSobreTablero(campeon, surfaceY), boardCenter.z + zOffset);
+            t.position = pos;
+            t.rotation = Quaternion.Euler(0f, yRotation, 0f);
+
+            Rigidbody rb = campeon.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                if (!rb.isKinematic)
+                {
+                    rb.velocity = Vector3.zero;
+                    rb.angularVelocity = Vector3.zero;
+                }
+                rb.isKinematic = true;
+                rb.useGravity = false;
+            }
+        }
+    }
+
+    float CalcularAlturaSobreTablero(CampeonCombat campeon, float surfaceY)
+    {
+        BoxCollider box = campeon.GetComponent<BoxCollider>();
+        if (box == null) return surfaceY + 0.02f;
+
+        float localBottom = box.center.y - box.size.y * 0.5f;
+        return surfaceY - localBottom * campeon.transform.lossyScale.y + 0.002f;
     }
 }

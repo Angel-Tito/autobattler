@@ -1218,6 +1218,18 @@ MonoBehaviour:
   _movementProvider: {fileID: 0}
   _handAligment: 0
   _handGrabPoses: []
+--- !u!134 &138762794
+PhysicMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: ' (Instance)'
+  dynamicFriction: 0.6
+  staticFriction: 0.6
+  bounciness: 0
+  frictionCombine: 0
+  bounceCombine: 0
 --- !u!1 &139377849
 GameObject:
   m_ObjectHideFlags: 0
@@ -2379,12 +2391,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerRig: {fileID: 1060507540}
-  spectatorScale: 0.1
+  spectatorScale: 1
   fadeDuration: 1
   prepHeightOffset: 0.35
   prepDistanceOffset: 1.3
-  combatHeightOffset: 0.08
-  combatDistanceOffset: 0.5
+  combatHeightOffset: 0.6
+  combatDistanceOffset: 1.25
+  escalaCampeonCombate: 0.28
+  separacionEquiposCombate: 0.9
+  separacionHorizontalCombate: 0.36
   tableroRenderer: {fileID: 1971382193}
   colorEmisionCombate: {r: 1.6, g: 0.4, b: 2, a: 2}
   equipo1:
@@ -2810,7 +2825,7 @@ MonoBehaviour:
   - {fileID: 1875626593}
   - {fileID: 846992535}
   - {fileID: 1481080112}
-  distanciaMaximaValida: 0.12
+  distanciaMaximaValida: 0.45
 --- !u!1 &394384362
 GameObject:
   m_ObjectHideFlags: 0
@@ -3262,6 +3277,7 @@ MonoBehaviour:
   alturaFlote: 0.5
   tiempoSnap: 0.08
   margenSuperficie: 0.002
+  radioColocacionLejana: 0.75
   materialBrillante: {fileID: 2100000, guid: 864aeebb4c24be2448a7552cb70d1032, type: 2}
 --- !u!114 &433035705
 MonoBehaviour:
@@ -3472,18 +3488,6 @@ SkinnedMeshRenderer:
     m_Center: {x: 0.008976316, y: -0.064772196, z: -0.067473285}
     m_Extent: {x: 0.0043462086, y: 0.006806761, z: 0.0068782493}
   m_DirtyAABB: 0
---- !u!134 &441537631
-PhysicMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  dynamicFriction: 0.6
-  staticFriction: 0.6
-  bounciness: 0
-  frictionCombine: 0
-  bounceCombine: 0
 --- !u!1 &444837390
 GameObject:
   m_ObjectHideFlags: 0
@@ -4528,12 +4532,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 533317778}
-  - component: {fileID: 533317784}
   - component: {fileID: 533317783}
   - component: {fileID: 533317782}
   - component: {fileID: 533317781}
-  - component: {fileID: 533317780}
-  - component: {fileID: 533317779}
   m_Layer: 0
   m_Name: ISDK_DistanceGrabInteraction
   m_TagString: Untagged
@@ -4556,34 +4557,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 2049895521}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &533317779
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 533317777}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0529a9671a3b6a74fab00c4d05312c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _renderer: {fileID: 0}
-  _customIcon: {fileID: 2800000, guid: aa3a2b3718100f84fb5d8ff9adb8ccb7, type: 3}
-  _snappiness: 1
---- !u!114 &533317780
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 533317777}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 830a777c9bbd60441b589b654b94b2c5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _filter: {fileID: 0}
 --- !u!114 &533317781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4684,30 +4657,6 @@ MonoBehaviour:
   _movementProvider: {fileID: 533317781}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &533317784
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 533317777}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2756c251a8363df4f9d4b30ee6414bd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _activeState: {fileID: 0}
-  _interactableFilters: []
-  _candidateTiebreaker: {fileID: 0}
-  _maxIterationsPerFrame: 3
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 0}
-  _rigidbody: {fileID: 0}
-  _distanceThreshold: 0.01
-  _snapPoseTransform: {fileID: 0}
-  _defaultInteractable: {fileID: 0}
-  _timeOutInteractable: {fileID: 0}
-  _timeOut: 2
 --- !u!1 &534153632
 GameObject:
   m_ObjectHideFlags: 0
@@ -4803,18 +4752,6 @@ Transform:
   - {fileID: 1968370666}
   m_Father: {fileID: 22436975}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!134 &560154582
-PhysicMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  dynamicFriction: 0.6
-  staticFriction: 0.6
-  bounciness: 0
-  frictionCombine: 0
-  bounceCombine: 0
 --- !u!1 &566453880
 GameObject:
   m_ObjectHideFlags: 0
@@ -7853,6 +7790,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5801245061754409418, guid: 0a7d2469f24041c4284c66706f84c45e, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5801245061754409418, guid: 0a7d2469f24041c4284c66706f84c45e, type: 3}
       propertyPath: _playerEyes
       value: 
       objectReference: {fileID: 122211493}
@@ -8230,6 +8171,9 @@ MonoBehaviour:
   frecuenciaProximidad: 0.3
   amplitudProximidad: 0.2
   duracionProximidad: 0.08
+  frecuenciaAgarre: 0.45
+  amplitudAgarre: 0.35
+  duracionAgarre: 0.1
   frecuenciaColocacion: 0.6
   amplitudColocacion: 0.6
   duracionColocacion: 0.15
@@ -8647,7 +8591,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1083726224}
-  m_Material: {fileID: 441537631}
+  m_Material: {fileID: 138762794}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -8889,6 +8833,18 @@ SkinnedMeshRenderer:
     m_Center: {x: -0.009499997, y: 0.01770607, z: -0.0011095628}
     m_Extent: {x: 0.04527676, y: 0.05372102, z: 0.06648618}
   m_DirtyAABB: 0
+--- !u!134 &1117592377
+PhysicMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: 
+  dynamicFriction: 0.6
+  staticFriction: 0.6
+  bounciness: 0
+  frictionCombine: 0
+  bounceCombine: 0
 --- !u!1 &1131112468
 GameObject:
   m_ObjectHideFlags: 0
@@ -10940,12 +10896,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1445658632}
-  - component: {fileID: 1445658638}
   - component: {fileID: 1445658637}
   - component: {fileID: 1445658636}
   - component: {fileID: 1445658635}
-  - component: {fileID: 1445658634}
-  - component: {fileID: 1445658633}
   m_Layer: 0
   m_Name: ISDK_DistanceGrabInteraction
   m_TagString: Untagged
@@ -10968,34 +10921,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1542087439}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1445658633
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1445658631}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0529a9671a3b6a74fab00c4d05312c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _renderer: {fileID: 0}
-  _customIcon: {fileID: 2800000, guid: aa3a2b3718100f84fb5d8ff9adb8ccb7, type: 3}
-  _snappiness: 1
---- !u!114 &1445658634
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1445658631}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 830a777c9bbd60441b589b654b94b2c5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _filter: {fileID: 0}
 --- !u!114 &1445658635
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11096,30 +11021,6 @@ MonoBehaviour:
   _movementProvider: {fileID: 1445658635}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &1445658638
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1445658631}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2756c251a8363df4f9d4b30ee6414bd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _activeState: {fileID: 0}
-  _interactableFilters: []
-  _candidateTiebreaker: {fileID: 0}
-  _maxIterationsPerFrame: 3
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 0}
-  _rigidbody: {fileID: 0}
-  _distanceThreshold: 0.01
-  _snapPoseTransform: {fileID: 0}
-  _defaultInteractable: {fileID: 0}
-  _timeOutInteractable: {fileID: 0}
-  _timeOut: 2
 --- !u!1 &1449080486
 GameObject:
   m_ObjectHideFlags: 0
@@ -11160,12 +11061,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1452791857}
-  - component: {fileID: 1452791863}
   - component: {fileID: 1452791862}
   - component: {fileID: 1452791861}
   - component: {fileID: 1452791860}
-  - component: {fileID: 1452791859}
-  - component: {fileID: 1452791858}
   m_Layer: 0
   m_Name: ISDK_DistanceGrabInteraction
   m_TagString: Untagged
@@ -11188,34 +11086,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1584233129}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1452791858
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1452791856}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0529a9671a3b6a74fab00c4d05312c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _renderer: {fileID: 0}
-  _customIcon: {fileID: 2800000, guid: aa3a2b3718100f84fb5d8ff9adb8ccb7, type: 3}
-  _snappiness: 1
---- !u!114 &1452791859
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1452791856}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 830a777c9bbd60441b589b654b94b2c5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _filter: {fileID: 0}
 --- !u!114 &1452791860
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11316,30 +11186,6 @@ MonoBehaviour:
   _movementProvider: {fileID: 1452791860}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &1452791863
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1452791856}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2756c251a8363df4f9d4b30ee6414bd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _activeState: {fileID: 0}
-  _interactableFilters: []
-  _candidateTiebreaker: {fileID: 0}
-  _maxIterationsPerFrame: 3
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 0}
-  _rigidbody: {fileID: 0}
-  _distanceThreshold: 0.01
-  _snapPoseTransform: {fileID: 0}
-  _defaultInteractable: {fileID: 0}
-  _timeOutInteractable: {fileID: 0}
-  _timeOut: 2
 --- !u!1 &1462163561
 GameObject:
   m_ObjectHideFlags: 0
@@ -11736,12 +11582,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1505069046}
-  - component: {fileID: 1505069052}
   - component: {fileID: 1505069051}
   - component: {fileID: 1505069050}
   - component: {fileID: 1505069049}
-  - component: {fileID: 1505069048}
-  - component: {fileID: 1505069047}
   m_Layer: 0
   m_Name: ISDK_DistanceGrabInteraction
   m_TagString: Untagged
@@ -11764,34 +11607,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 433035708}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1505069047
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1505069045}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0529a9671a3b6a74fab00c4d05312c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _renderer: {fileID: 0}
-  _customIcon: {fileID: 2800000, guid: aa3a2b3718100f84fb5d8ff9adb8ccb7, type: 3}
-  _snappiness: 1
---- !u!114 &1505069048
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1505069045}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 830a777c9bbd60441b589b654b94b2c5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _filter: {fileID: 0}
 --- !u!114 &1505069049
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11892,30 +11707,6 @@ MonoBehaviour:
   _movementProvider: {fileID: 1505069049}
   _handAligment: 1
   _handGrabPoses: []
---- !u!114 &1505069052
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1505069045}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2756c251a8363df4f9d4b30ee6414bd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _activeState: {fileID: 0}
-  _interactableFilters: []
-  _candidateTiebreaker: {fileID: 0}
-  _maxIterationsPerFrame: 3
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 0}
-  _rigidbody: {fileID: 0}
-  _distanceThreshold: 0.01
-  _snapPoseTransform: {fileID: 0}
-  _defaultInteractable: {fileID: 0}
-  _timeOutInteractable: {fileID: 0}
-  _timeOut: 2
 --- !u!1 &1512159300
 GameObject:
   m_ObjectHideFlags: 0
@@ -12024,6 +11815,7 @@ MonoBehaviour:
   alturaFlote: 0.5
   tiempoSnap: 0.08
   margenSuperficie: 0.002
+  radioColocacionLejana: 0.75
   materialBrillante: {fileID: 2100000, guid: 864aeebb4c24be2448a7552cb70d1032, type: 2}
 --- !u!114 &1512159306
 MonoBehaviour:
@@ -12479,6 +12271,7 @@ MonoBehaviour:
   alturaFlote: 0.5
   tiempoSnap: 0.08
   margenSuperficie: 0.002
+  radioColocacionLejana: 0.75
   materialBrillante: {fileID: 2100000, guid: 864aeebb4c24be2448a7552cb70d1032, type: 2}
 --- !u!114 &1542087436
 MonoBehaviour:
@@ -12555,7 +12348,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1542087431}
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 1117592377}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -12987,6 +12780,7 @@ MonoBehaviour:
   alturaFlote: 0.5
   tiempoSnap: 0.08
   margenSuperficie: 0.002
+  radioColocacionLejana: 0.75
   materialBrillante: {fileID: 2100000, guid: 864aeebb4c24be2448a7552cb70d1032, type: 2}
 --- !u!114 &1584233126
 MonoBehaviour:
@@ -13063,7 +12857,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1584233121}
-  m_Material: {fileID: 560154582}
+  m_Material: {fileID: 1840996273}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -14806,6 +14600,18 @@ Transform:
   - {fileID: 1384948733}
   m_Father: {fileID: 776892159}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!134 &1840996273
+PhysicMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: ' (Instance) (Instance)'
+  dynamicFriction: 0.6
+  staticFriction: 0.6
+  bounciness: 0
+  frictionCombine: 0
+  bounceCombine: 0
 --- !u!1 &1842527507
 GameObject:
   m_ObjectHideFlags: 0
@@ -16063,6 +15869,7 @@ MonoBehaviour:
   alturaFlote: 0.5
   tiempoSnap: 0.08
   margenSuperficie: 0.002
+  radioColocacionLejana: 0.75
   materialBrillante: {fileID: 2100000, guid: 864aeebb4c24be2448a7552cb70d1032, type: 2}
 --- !u!114 &2049895518
 MonoBehaviour:
@@ -18114,21 +17921,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &458463103012276163
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1799933769102601833}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0529a9671a3b6a74fab00c4d05312c64, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _renderer: {fileID: 0}
-  _customIcon: {fileID: 2800000, guid: aa3a2b3718100f84fb5d8ff9adb8ccb7, type: 3}
-  _snappiness: 1
 --- !u!4 &464063216553254011
 Transform:
   m_ObjectHideFlags: 0
@@ -22618,12 +22410,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8578287026384521004}
-  - component: {fileID: 1799933769102601834}
   - component: {fileID: 8444388006621366319}
   - component: {fileID: 3463817173877863488}
   - component: {fileID: 6711610426703059687}
-  - component: {fileID: 3228283784699763155}
-  - component: {fileID: 458463103012276163}
   m_Layer: 0
   m_Name: ISDK_DistanceGrabInteraction
   m_TagString: Untagged
@@ -22631,30 +22420,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1799933769102601834
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1799933769102601833}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2756c251a8363df4f9d4b30ee6414bd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _activeState: {fileID: 0}
-  _interactableFilters: []
-  _candidateTiebreaker: {fileID: 0}
-  _maxIterationsPerFrame: 3
-  _data: {fileID: 0}
-  _pointableElement: {fileID: 0}
-  _rigidbody: {fileID: 0}
-  _distanceThreshold: 0.01
-  _snapPoseTransform: {fileID: 0}
-  _defaultInteractable: {fileID: 0}
-  _timeOutInteractable: {fileID: 0}
-  _timeOut: 2
 --- !u!4 &1817045488609050108
 Transform:
   m_ObjectHideFlags: 0
@@ -27231,19 +26996,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &3228283784699763155
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1799933769102601833}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 830a777c9bbd60441b589b654b94b2c5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _filter: {fileID: 2342156431110231220}
 --- !u!4 &3264454538459079715
 Transform:
   m_ObjectHideFlags: 0
