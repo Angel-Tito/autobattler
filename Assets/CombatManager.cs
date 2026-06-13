@@ -274,7 +274,16 @@ public class CombatManager : MonoBehaviour
             yield return null;
         }
 
-        // 5. Iniciar la lógica de ataque (RF07)
+        // 5. Desactivar colliders de las cuadrículas para pelear libremente sobre la mesa
+        GridManager gm = FindObjectOfType<GridManager>();
+        if (gm != null) {
+            foreach(Transform child in gm.transform) {
+                Collider col = child.GetComponent<Collider>();
+                if (col != null) col.enabled = false;
+            }
+        }
+
+        // 6. Iniciar la lógica de ataque (RF07)
         ActivarFichas();
     }
 

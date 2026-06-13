@@ -52,6 +52,8 @@ public class CampeonSnap : MonoBehaviour
     public void BloquearInteraccion()
     {
         if (_wrapper != null) _wrapper.enabled = false;
+        var grabbable = GetComponent<Oculus.Interaction.Grabbable>();
+        if (grabbable != null) grabbable.enabled = false;
         // NO desactivar _boxCollider aquí, porque la gravedad sigue activa durante la cinemática de transición
         // y se caerían a través del suelo.
     }
@@ -131,10 +133,10 @@ public class CampeonSnap : MonoBehaviour
     // ─────────────────────────────────────────────────────
     IEnumerator MoverHaciaCelda(Vector3 destino)
     {
+        CollisionDetectionMode oldMode = CollisionDetectionMode.Continuous;
         if (_rb != null)
         {
-            // Limpiar velocidades ANTES de activar isKinematic.
-            // Unity no permite setear velocity en un Rigidbody kinematic → warning.
+            oldMode = _rb.collisionDetectionMode;
             _rb.velocity               = Vector3.zero;
             _rb.angularVelocity        = Vector3.zero;
             _rb.isKinematic            = true;
@@ -157,7 +159,10 @@ public class CampeonSnap : MonoBehaviour
         yield return new WaitForFixedUpdate();
 
         if (_rb != null)
+        {
             _rb.isKinematic = false;
+            _rb.collisionDetectionMode = oldMode;
+        }
     }
 
     // ─────────────────────────────────────────────────────
@@ -165,6 +170,7 @@ public class CampeonSnap : MonoBehaviour
     // ─────────────────────────────────────────────────────
     void LateUpdate()
     {
+        if (!estaAgarrado && _rb != null && !_rb.isKinematic) return;
         // Pase lo que pase, forzamos a que el modelo se mantenga recto (ignora inclinación de la mano)
         Vector3 rot = transform.eulerAngles;
         rot.x = 0;

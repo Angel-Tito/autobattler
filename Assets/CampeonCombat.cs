@@ -23,57 +23,87 @@ public class CampeonCombat : MonoBehaviour
     private Animator _animator;
     private float tiempoUltimoAtaque;
 
+    private Vector3 animatorOriginalPos;
+    private Transform animTr;
+    private float currentYOffset = 0f;
+    private bool haGanado = false;
+    private GameObject corrector;
+
     void Awake()
     {
         Animator animator = GetComponentInChildren<Animator>();
         if (animator == null) return;
 
-        Transform animTr = animator.transform;
+        animTr = animator.transform;
+        
+        if (animTr.parent != null && animTr.parent.name == "ScaleCorrector") 
+        {
+            corrector = animTr.parent.gameObject;
+            animatorOriginalPos = corrector.transform.localPosition;
+            return;
+        }
 
-        // Ya fue corregido en una ejecución anterior
-        if (animTr.parent != null && animTr.parent.name == "ScaleCorrector") return;
-
-        // ── CORRECCIÓN: capturar la escala GLOBAL (lossy) del objeto raíz,
-        // no la local del Animator (que casi siempre ya es 1,1,1).
-        // Esto cubre el caso donde el scale compensatorio está en el padre raíz.
         Vector3 scaleToPreserve = animTr.lossyScale;
+        bool scaleIsUnity = Mathf.Approximately(scaleToPreserve.x, 1f) &&
+                            Mathf.Approximately(scaleToPreserve.y, 1f) &&
+                            Mathf.Approximately(scaleToPreserve.z, 1f);
 
-        // Solo actuar si hay escala no-estándar en algún nivel de la jerarquía
-        bool scaleIsUnity =
-            Mathf.Approximately(scaleToPreserve.x, 1f) &&
-            Mathf.Approximately(scaleToPreserve.y, 1f) &&
-            Mathf.Approximately(scaleToPreserve.z, 1f);
+        if (scaleIsUnity) return; 
 
-        if (scaleIsUnity) return; // Nada que corregir
-
-        // Calcular el scale local que debe tener el ScaleCorrector para reproducir
-        // la escala global original, partiendo del parent actual.
         Vector3 parentLossy = animTr.parent != null ? animTr.parent.lossyScale : Vector3.one;
         Vector3 correctorLocalScale = new Vector3(
             scaleToPreserve.x / Mathf.Max(parentLossy.x, 0.0001f),
             scaleToPreserve.y / Mathf.Max(parentLossy.y, 0.0001f),
             scaleToPreserve.z / Mathf.Max(parentLossy.z, 0.0001f));
 
-        // Crear el nodo corrector intermedio
-        GameObject corrector = new GameObject("ScaleCorrector");
+        corrector = new GameObject("ScaleCorrector");
         corrector.transform.SetParent(animTr.parent, false);
         corrector.transform.localPosition = animTr.localPosition;
         corrector.transform.localRotation = animTr.localRotation;
         corrector.transform.localScale = correctorLocalScale;
 
-        // Reparentar el Animator bajo el corrector con localScale neutral (1,1,1)
+        animatorOriginalPos = corrector.transform.localPosition;
+
         animTr.SetParent(corrector.transform, false);
         animTr.localPosition = Vector3.zero;
         animTr.localRotation = Quaternion.identity;
-        animTr.localScale = Vector3.one; // Las curvas de animación resetearán a esto → sin efecto visual
+        animTr.localScale = Vector3.one; 
+    }
 
-        Debug.Log($"[CampeonCombat] ScaleCorrector aplicado en {gameObject.name}. " +
-                  $"Escala preservada: {scaleToPreserve}");
+    void LateUpdate()
+    {
+        if (corrector != null)
+        {
+            float targetYOffset = 0f;
+            if (_animator != null)
+            {
+                var state = _animator.GetCurrentAnimatorStateInfo(0);
+                
+                // Compensar el hundimiento severo de las animaciones de Muerte
+                if (estaMuerto && (gameObject.name.Contains("atroxx") || gameObject.name.Contains("mordekaiser")))
+                {
+                    targetYOffset = 0.05f; // ~2.5 cm world lift
+                }
+                // Compensar el hundimiento en Combate (Aatrox baja la pelvis en sus ataques)
+                else if (!estaMuerto && gameObject.name.Contains("atroxx") && 
+                         (state.IsName("Attack1") || state.IsName("Attack2") || state.IsName("Spell")))
+                {
+                    targetYOffset = 0.035f; // ~1.5 cm world lift
+                }
+            }
+
+            // Interpolación suave para que no dé un salto brusco
+            currentYOffset = Mathf.Lerp(currentYOffset, targetYOffset, Time.deltaTime * 8f);
+            corrector.transform.localPosition = animatorOriginalPos + Vector3.up * currentYOffset;
+        }
     }
 
     void Start()
     {
         vidaActual = vidaMaxima;
+        // Desincronizar ligeramente los ataques para que nunca ataquen en el mismo frame exacto
+        tiempoEntreAtaques += Random.Range(-0.15f, 0.15f);
+
         _animator = GetComponentInChildren<Animator>();
         if (_animator == null) {
             Debug.LogError($"[CampeonCombat] No se encontró Animator en los hijos de {gameObject.name}");
@@ -115,24 +145,19 @@ public class CampeonCombat : MonoBehaviour
 
             if (distancia > rangoAtaque)
             {
-                // Moverse solo en X y Z (manteniendo la Y original)
                 Vector3 targetPos = objetivoActual.transform.position;
                 targetPos.y = transform.position.y;
                 transform.position = Vector3.MoveTowards(transform.position, targetPos, velocidadMovimiento * Time.deltaTime);
                 
-                // Rotar hacia el objetivo (solo en el eje Y para no inclinarse)
                 Vector3 direccion = (targetPos - transform.position).normalized;
                 if (direccion != Vector3.zero)
                 {
                     Quaternion rotacionObjetivo = Quaternion.LookRotation(direccion);
                     transform.rotation = Quaternion.Slerp(transform.rotation, rotacionObjetivo, Time.deltaTime * 10f);
                 }
-
-                // Opcional: Activar animación de correr si existe, o solo dejarlo deslizar por ahora
             }
             else
             {
-                // Atacar
                 if (Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
                 {
                     Atacar();
@@ -142,8 +167,24 @@ public class CampeonCombat : MonoBehaviour
         else
         {
             // Si no hay enemigos vivos, gana.
-            _animator.SetTrigger("Celebration");
-            enCombate = false;
+            if (!haGanado)
+            {
+                haGanado = true;
+                enCombate = false;
+                StartCoroutine(LoopVictoria());
+            }
+        }
+    }
+
+    IEnumerator LoopVictoria()
+    {
+        string animVictoria = "Celebration";
+        if (gameObject.name.Contains("atroxx")) animVictoria = "Dance_Loop";
+        
+        while(true)
+        {
+            if (_animator != null) _animator.SetTrigger(animVictoria);
+            yield return new WaitForSeconds(2.5f);
         }
     }
 
@@ -168,21 +209,36 @@ public class CampeonCombat : MonoBehaviour
     {
         tiempoUltimoAtaque = Time.time;
         
-        // Determinar qué trigger usar
-        string triggerAtq = string.IsNullOrEmpty(triggerAtaqueOverride) ? "Attack1" : triggerAtaqueOverride;
+        string triggerAtq = "Attack1";
+        if (!string.IsNullOrEmpty(triggerAtaqueOverride))
+        {
+            triggerAtq = triggerAtaqueOverride;
+        }
+        else
+        {
+            // Randomize attacks for variety if it's tamkech or others with multiple attacks
+            if (gameObject.name.Contains("tamkech"))
+            {
+                string[] attacks = { "Attack1", "Attack2", "Spell", "Spell_Dash" };
+                triggerAtq = attacks[Random.Range(0, attacks.Length)];
+            }
+            else
+            {
+                // General random attack (assuming others also have Attack2)
+                triggerAtq = Random.Range(0, 2) == 0 ? "Attack1" : "Attack2";
+            }
+        }
         
-        // Fallback por si la animacion real tiene sufijos como Attack1a o Attack1.001
-        // Como inyectamos exactamente esos nombres, podemos usar el override en el inspector.
         _animator.SetTrigger(triggerAtq);
 
-        // Hacer el daño con un pequeño retraso para sincronizar con la animación
         StartCoroutine(AplicarDaño(objetivoActual, dañoAtaque, 0.5f));
     }
 
     IEnumerator AplicarDaño(CampeonCombat target, float dmg, float delay)
     {
         yield return new WaitForSeconds(delay);
-        if (target != null && !target.estaMuerto)
+        // Evitar daño mutuo simultáneo si este atacante ya murió durante el retraso
+        if (!estaMuerto && target != null && !target.estaMuerto)
         {
             target.RecibirDaño(dmg);
         }
@@ -203,7 +259,6 @@ public class CampeonCombat : MonoBehaviour
     {
         estaMuerto = true;
         
-        // Algunos personajes tienen Death, otros Death.001
         string triggerMuerte = "Death";
         if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
         
