@@ -25,35 +25,50 @@ public class CampeonCombat : MonoBehaviour
 
     void Awake()
     {
-        // Corregir escala del Animator para evitar que las curvas de animación
-        // lo reseteen a 1.0 (haciendo que los personajes se vuelvan gigantes en combate).
         Animator animator = GetComponentInChildren<Animator>();
-        if (animator != null)
-        {
-            Transform animatorTransform = animator.transform;
-            // Solo aplicar si no se ha corregido ya y tiene escala diferente de 1.0
-            if (animatorTransform.parent != null && 
-                animatorTransform.parent.name != "ScaleCorrector" && 
-                animatorTransform.localScale != Vector3.one)
-            {
-                Vector3 originalScale = animatorTransform.localScale;
-                
-                // Crear el contenedor corrector intermedio
-                GameObject scaleCorrector = new GameObject("ScaleCorrector");
-                scaleCorrector.transform.SetParent(animatorTransform.parent, false);
-                scaleCorrector.transform.localPosition = animatorTransform.localPosition;
-                scaleCorrector.transform.localRotation = animatorTransform.localRotation;
-                scaleCorrector.transform.localScale = originalScale;
-                
-                // Reparentar el Animator bajo el corrector y resetear a escala neutra (1.0)
-                animatorTransform.SetParent(scaleCorrector.transform, false);
-                animatorTransform.localPosition = Vector3.zero;
-                animatorTransform.localRotation = Quaternion.identity;
-                animatorTransform.localScale = Vector3.one;
-                
-                Debug.Log($"[CampeonCombat] ScaleCorrector configurado para {gameObject.name}. Escala original guardada: {originalScale}");
-            }
-        }
+        if (animator == null) return;
+
+        Transform animTr = animator.transform;
+
+        // Ya fue corregido en una ejecución anterior
+        if (animTr.parent != null && animTr.parent.name == "ScaleCorrector") return;
+
+        // ── CORRECCIÓN: capturar la escala GLOBAL (lossy) del objeto raíz,
+        // no la local del Animator (que casi siempre ya es 1,1,1).
+        // Esto cubre el caso donde el scale compensatorio está en el padre raíz.
+        Vector3 scaleToPreserve = animTr.lossyScale;
+
+        // Solo actuar si hay escala no-estándar en algún nivel de la jerarquía
+        bool scaleIsUnity =
+            Mathf.Approximately(scaleToPreserve.x, 1f) &&
+            Mathf.Approximately(scaleToPreserve.y, 1f) &&
+            Mathf.Approximately(scaleToPreserve.z, 1f);
+
+        if (scaleIsUnity) return; // Nada que corregir
+
+        // Calcular el scale local que debe tener el ScaleCorrector para reproducir
+        // la escala global original, partiendo del parent actual.
+        Vector3 parentLossy = animTr.parent != null ? animTr.parent.lossyScale : Vector3.one;
+        Vector3 correctorLocalScale = new Vector3(
+            scaleToPreserve.x / Mathf.Max(parentLossy.x, 0.0001f),
+            scaleToPreserve.y / Mathf.Max(parentLossy.y, 0.0001f),
+            scaleToPreserve.z / Mathf.Max(parentLossy.z, 0.0001f));
+
+        // Crear el nodo corrector intermedio
+        GameObject corrector = new GameObject("ScaleCorrector");
+        corrector.transform.SetParent(animTr.parent, false);
+        corrector.transform.localPosition = animTr.localPosition;
+        corrector.transform.localRotation = animTr.localRotation;
+        corrector.transform.localScale = correctorLocalScale;
+
+        // Reparentar el Animator bajo el corrector con localScale neutral (1,1,1)
+        animTr.SetParent(corrector.transform, false);
+        animTr.localPosition = Vector3.zero;
+        animTr.localRotation = Quaternion.identity;
+        animTr.localScale = Vector3.one; // Las curvas de animación resetearán a esto → sin efecto visual
+
+        Debug.Log($"[CampeonCombat] ScaleCorrector aplicado en {gameObject.name}. " +
+                  $"Escala preservada: {scaleToPreserve}");
     }
 
     void Start()
