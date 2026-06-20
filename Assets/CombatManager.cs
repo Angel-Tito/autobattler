@@ -28,7 +28,12 @@ public class CombatManager : MonoBehaviour
     public List<CampeonCombat> equipo2 = new List<CampeonCombat>();
 
     private bool enCombate = false;
-    private UnityEngine.UI.Image fadeImage;
+    
+    [Header("Música")]
+    public AudioClip musicaFondo;
+    public AudioClip musicaCombate;
+    private AudioSource musicSource;
+private UnityEngine.UI.Image fadeImage;
 
 void Awake()
 {
@@ -41,10 +46,21 @@ void Awake()
     Application.targetFrameRate = 72;
     try { OVRPlugin.systemDisplayFrequency = 72f; }
     catch { Debug.LogWarning("[CombatManager] OVRPlugin no disponible en editor, targetFrameRate=72 aplicado."); }
+
+    musicSource = gameObject.AddComponent<AudioSource>();
+    musicSource.loop = true;
+    musicSource.spatialBlend = 0f;
+    musicSource.volume = 0.5f;
 }
 
     void Start()
     {
+        if (musicaFondo != null && musicSource != null)
+        {
+            musicSource.clip = musicaFondo;
+            musicSource.Play();
+        }
+
         // Conectar el botón físico por código para asegurar que siempre funcione
         GameObject btnObj = GameObject.Find("BotonInicioCombate_Poke");
         if (btnObj != null)
@@ -273,6 +289,12 @@ void CrearFadeCanvas()
         enCombate = true;
 
         Debug.Log("[CombatManager] Combate Iniciado");
+
+        if (musicSource != null && musicaCombate != null)
+        {
+            musicSource.clip = musicaCombate;
+            musicSource.Play();
+        }
 
         // Vibración RNF05
         if (HapticFeedback.Instance != null)

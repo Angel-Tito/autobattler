@@ -2489,6 +2489,8 @@ MonoBehaviour:
   equipo2:
   - {fileID: 1542087442}
   - {fileID: 573785653}
+  musicaFondo: {fileID: 8300000, guid: d5c3be8c548daf74abb955dd463ebf33, type: 3}
+  musicaCombate: {fileID: 8300000, guid: 0b140b89b2c173d4ca441b0e1d8f7e4b, type: 3}
 --- !u!4 &333618161
 Transform:
   m_ObjectHideFlags: 0
@@ -4596,6 +4598,12 @@ MonoBehaviour:
   rangoAtaque: 0.5
   velocidadMovimiento: 0.8
   tiempoEntreAtaques: 1.5
+  clipPurchase: {fileID: 8300000, guid: c311dbad7f969a14f9c4fd007cc987e3, type: 3}
+  clipsSpellCast:
+  - {fileID: 8300000, guid: 28b003f6b5ee7154ba9ed94e9fdada4b, type: 3}
+  - {fileID: 8300000, guid: ce2df9972ff12c54d8f585774a1d0ab7, type: 3}
+  - {fileID: 8300000, guid: fbf14ed4ff81059418cd2cc218ac3f43, type: 3}
+  clipVictory: {fileID: 8300000, guid: dd5231f5d734a7d45ac1fa89c6cb9086, type: 3}
   triggerAtaqueOverride: 
 --- !u!114 &573785654
 MonoBehaviour:
@@ -8395,7 +8403,7 @@ Transform:
   m_GameObject: {fileID: 1060507535}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -0.008, z: -1.309}
+  m_LocalPosition: {x: 0, y: 0.195, z: -1.354}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -12404,6 +12412,12 @@ MonoBehaviour:
   rangoAtaque: 0.5
   velocidadMovimiento: 0.8
   tiempoEntreAtaques: 1.5
+  clipPurchase: {fileID: 8300000, guid: 5a0b5842e9655624b9dbe70818bfec0b, type: 3}
+  clipsSpellCast:
+  - {fileID: 8300000, guid: de7cb306abb8b794b934d3f6ffba1eb9, type: 3}
+  - {fileID: 8300000, guid: b24850df1a37d9943930de2c57d3df42, type: 3}
+  - {fileID: 8300000, guid: 91b812909dd314e4193eba2ca445c02f, type: 3}
+  clipVictory: {fileID: 8300000, guid: 8e7014c4dd5b79c4c9d67795b99ea35a, type: 3}
   triggerAtaqueOverride: Attack1.001
 --- !u!1 &1559979729
 GameObject:
@@ -12912,6 +12926,12 @@ MonoBehaviour:
   rangoAtaque: 0.5
   velocidadMovimiento: 0.8
   tiempoEntreAtaques: 1.5
+  clipPurchase: {fileID: 8300000, guid: a359e12531921ab4f9aa190453fcdb0f, type: 3}
+  clipsSpellCast:
+  - {fileID: 8300000, guid: 770a04ba20a0b9c4e85b05930bb9d4e7, type: 3}
+  - {fileID: 8300000, guid: 47a5073157b611547b7a1016ac107178, type: 3}
+  - {fileID: 8300000, guid: 59ee9758bf095874e8074f02eb002670, type: 3}
+  clipVictory: {fileID: 8300000, guid: c6cecceb8f23ae345acecf1a85eff9d5, type: 3}
   triggerAtaqueOverride: 
 --- !u!1 &1589672266
 GameObject:
@@ -15988,6 +16008,12 @@ MonoBehaviour:
   rangoAtaque: 0.5
   velocidadMovimiento: 0.8
   tiempoEntreAtaques: 1.5
+  clipPurchase: {fileID: 8300000, guid: 5d18a5037a0626245b80897b97e47d6d, type: 3}
+  clipsSpellCast:
+  - {fileID: 8300000, guid: 98a81a789b9abc14d81133ed9a57f23c, type: 3}
+  - {fileID: 8300000, guid: a19b73df07550984cb7118aae3895e2e, type: 3}
+  - {fileID: 8300000, guid: 480d726b18515d645864eee041554fe8, type: 3}
+  clipVictory: {fileID: 8300000, guid: e38c744bc5641b54db2d3e24ba3d2895, type: 3}
   triggerAtaqueOverride: Attack1a
 --- !u!1 &2052359893
 GameObject:

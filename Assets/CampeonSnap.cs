@@ -85,6 +85,10 @@ public class CampeonSnap : MonoBehaviour
     {
         estaAgarrado     = true;
         posicionAnterior = transform.position;
+
+        // Disparar el sonido de compra/agarre del componente de combate
+        var combat = GetComponent<CampeonCombat>();
+        if (combat != null) combat.PlayGrabAudio();
     }
 
     public void SoltarPiezaVR()

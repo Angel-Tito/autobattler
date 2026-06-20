@@ -12,7 +12,15 @@ public class CampeonCombat : MonoBehaviour
     public float tiempoEntreAtaques = 1.5f;
 
     [Header("Configuración Opcional")]
-    public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora por ejemplo
+    
+    [Header("Audios")]
+    public AudioClip clipPurchase;
+    public AudioClip[] clipsSpellCast;
+    public AudioClip clipVictory;
+    
+    private AudioSource _audioSource;
+    private bool haSidoAgarrado = false;
+public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora por ejemplo
 
     private float vidaActual;
     private bool estaMuerto = false;
@@ -108,7 +116,23 @@ public class CampeonCombat : MonoBehaviour
         if (_animator == null) {
             Debug.LogError($"[CampeonCombat] No se encontró Animator en los hijos de {gameObject.name}");
         }
+
+        _audioSource = GetComponent<AudioSource>();
+        if (_audioSource == null) {
+            _audioSource = gameObject.AddComponent<AudioSource>();
+            _audioSource.spatialBlend = 1f; // 3D sound
+        }
     }
+
+    public void PlayGrabAudio()
+    {
+        if (!haSidoAgarrado && clipPurchase != null && _audioSource != null)
+        {
+            haSidoAgarrado = true;
+            _audioSource.PlayOneShot(clipPurchase);
+        }
+    }
+
 
     public void IniciarIA(List<CampeonCombat> equipoRival)
     {
@@ -181,6 +205,11 @@ public class CampeonCombat : MonoBehaviour
         string animVictoria = "Celebration";
         if (gameObject.name.Contains("atroxx")) animVictoria = "Dance_Loop";
         
+        if (clipVictory != null && _audioSource != null)
+        {
+            _audioSource.PlayOneShot(clipVictory);
+        }
+
         while(true)
         {
             if (_animator != null) _animator.SetTrigger(animVictoria);
@@ -230,6 +259,12 @@ public class CampeonCombat : MonoBehaviour
         }
         
         _animator.SetTrigger(triggerAtq);
+
+        if (clipsSpellCast != null && clipsSpellCast.Length > 0 && _audioSource != null)
+        {
+            AudioClip randomClip = clipsSpellCast[Random.Range(0, clipsSpellCast.Length)];
+            if (randomClip != null) _audioSource.PlayOneShot(randomClip);
+        }
 
         StartCoroutine(AplicarDaño(objetivoActual, dañoAtaque, 0.5f));
     }
