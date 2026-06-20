@@ -16,8 +16,8 @@ public class CombatManager : MonoBehaviour
     public float prepDistanceOffset = 1.30f; // Distancia horizontal de 1.3m
 
     [Header("Ergonomía de Cámara - Combate (Escala 0.1)")]
-    public float combatHeightOffset = 0.08f; // Altura baja sobre el tablero (escala espectador)
-    public float combatDistanceOffset = 0.50f; // Colocado en el mapa (tablero)
+    public float combatHeightOffset = 0.0f; // Altura a nivel de la superficie (dentro del tablero)
+    public float combatDistanceOffset = 0.35f; // Más cerca del centro del tablero
 
     [Header("Animación Rúnica (RF05)")]
     public Renderer tableroRenderer;
@@ -30,11 +30,18 @@ public class CombatManager : MonoBehaviour
     private bool enCombate = false;
     private UnityEngine.UI.Image fadeImage;
 
-    void Awake()
-    {
-        Instance = this;
-        CrearFadeCanvas();
-    }
+void Awake()
+{
+    Instance = this;
+    CrearFadeCanvas();
+
+    // RNF01: Fijar 72 FPS para Quest 2 (frecuencia nativa del display).
+    // Application.targetFrameRate informa al motor de Unity;
+    // OVRPlugin.systemDisplayFrequency lo comunica al compositor de OVR.
+    Application.targetFrameRate = 72;
+    try { OVRPlugin.systemDisplayFrequency = 72f; }
+    catch { Debug.LogWarning("[CombatManager] OVRPlugin no disponible en editor, targetFrameRate=72 aplicado."); }
+}
 
     void Start()
     {
@@ -61,106 +68,151 @@ public class CombatManager : MonoBehaviour
         StartCoroutine(AlinearCamaraErgonomicaAlInicio());
     }
 
-    IEnumerator AlinearCamaraErgonomicaAlInicio()
-    {
-        // Esperar un par de frames y a que la cámara tenga una altura local válida (> 0.5 metros)
-        // para asegurar que el tracking de Oculus/Meta ha inicializado antes de mover la cámara
-        float timeout = 2.0f;
-        float elapsed = 0.0f;
-        while (elapsed < timeout)
-        {
-            if (Camera.main != null && Camera.main.transform.localPosition.y > 0.5f)
-            {
-                break;
-            }
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
+IEnumerator AlinearCamaraErgonomicaAlInicio()
+{
+    // Esperar al menos 2 frames para que OVRCameraRig arranque y empiece
+    // a recibir datos de tracking antes de intentar leer localPosition.
+    yield return null;
+    yield return null;
 
-        AcomodarCamaraErgonomica(1.0f);
+    // Hacer polling hasta que el headset reporte una altura valida.
+    // Umbral 0.1m: cualquier usuario de pie o sentado supera esta altura.
+    // Timeout 5s: suficiente para Quest 2 incluso con arranques lentos.
+    float timeout = 5.0f;
+    float elapsed = 0.0f;
+    while (elapsed < timeout)
+    {
+        if (Camera.main != null && Camera.main.transform.localPosition.y > 0.1f)
+            break;
+        elapsed += Time.deltaTime;
+        yield return null;
     }
 
-    public void AcomodarCamaraErgonomica(float scale)
+    string estado = Camera.main != null
+        ? "localY=" + Camera.main.transform.localPosition.y.ToString("F3")
+        : "Camera.main null";
+    Debug.Log("[CombatManager] Tracking inicial listo en " + elapsed.ToString("F2")
+        + "s. " + estado + ". Alineando camara.");
+
+    AcomodarCamaraErgonomica(1.0f);
+}
+
+public void AcomodarCamaraErgonomica(float scale)
+{
+    if (playerRig == null || Camera.main == null) return;
+
+    // 1. Desactivar temporalmente CharacterController y locomotor
+    CharacterController charController = playerRig.GetComponentInChildren<CharacterController>();
+    var locomotor = playerRig.GetComponentInChildren<Oculus.Interaction.Locomotion.FirstPersonLocomotor>();
+
+    Vector3 savedLocalPos = Vector3.zero;
+    bool wasCharEnabled = false;
+    bool wasLocomotorEnabled = false;
+
+    if (charController != null)
     {
-        if (playerRig == null || Camera.main == null) return;
+        wasCharEnabled = charController.enabled;
+        charController.enabled = false;
+        savedLocalPos = charController.transform.localPosition;
+    }
+    if (locomotor != null)
+    {
+        wasLocomotorEnabled = locomotor.enabled;
+        locomotor.enabled = false;
+    }
 
-        // 1. Encontrar y desactivar temporalmente el CharacterController y locomotor
-        // para evitar que la física o scripts de locomoción bloqueen o reviertan el movimiento del Rig.
-        CharacterController charController = playerRig.GetComponentInChildren<CharacterController>();
-        var locomotor = playerRig.GetComponentInChildren<Oculus.Interaction.Locomotion.FirstPersonLocomotor>();
-        
-        Vector3 savedLocalPos = Vector3.zero;
-        bool wasCharEnabled = false;
-        bool wasLocomotorEnabled = false;
+    // ESCALAR EL RIG
+    playerRig.localScale = Vector3.one * scale;
 
-        if (charController != null)
-        {
-            wasCharEnabled = charController.enabled;
-            charController.enabled = false;
-            savedLocalPos = charController.transform.localPosition;
-        }
-        if (locomotor != null)
-        {
-            wasLocomotorEnabled = locomotor.enabled;
-            locomotor.enabled = false;
-        }
+    // Calcular referencias del tablero
+    Vector3 boardCenter = tableroRenderer != null ? tableroRenderer.bounds.center : Vector3.zero;
+    float boardSurfaceY   = tableroRenderer != null ? tableroRenderer.bounds.max.y : 0.742f;
+    float boardVisualTop  = boardSurfaceY; // top del renderer (paredes/bordes decorativos)
 
-        // ESCALAR EL JUGADOR PARA LOGRAR LA PERSPECTIVA DE ESPECTADOR MINIATURA
-        playerRig.localScale = Vector3.one * scale;
+    // Refinamos boardSurfaceY con la Y de las celdas (campo de juego real)
+    // y conservamos boardVisualTop como techo del modelo para el modo combate
+    GridManager gmRef = FindObjectOfType<GridManager>();
+    if (gmRef != null && gmRef.celdas.Count > 0 && gmRef.celdas[0] != null)
+    {
+        boardSurfaceY = gmRef.celdas[0].position.y;
+        boardCenter.y = boardSurfaceY;
+    }
 
-        // Obtener el centro del tablero y su superficie superior
-        Vector3 boardCenter = tableroRenderer != null ? tableroRenderer.bounds.center : Vector3.zero;
-        float boardSurfaceY = tableroRenderer != null ? tableroRenderer.bounds.max.y : 0.742f;
+    // 2. Alinear rotacion Y del rig hacia el centro del tablero
+    Vector3 cameraLocalForward = Camera.main.transform.localRotation * Vector3.forward;
+    cameraLocalForward.y = 0;
+    if (cameraLocalForward.sqrMagnitude < 0.001f) cameraLocalForward = Vector3.forward;
+    cameraLocalForward.Normalize();
 
-        // 2. Alinear rotación en el eje Y para mirar hacia el centro del tablero
-        Vector3 cameraLocalForward = Camera.main.transform.localRotation * Vector3.forward;
-        cameraLocalForward.y = 0;
-        if (cameraLocalForward.sqrMagnitude < 0.001f) cameraLocalForward = Vector3.forward;
-        cameraLocalForward.Normalize();
+    Vector3 toBoard = boardCenter - Camera.main.transform.position;
+    toBoard.y = 0;
+    if (toBoard.sqrMagnitude < 0.001f) toBoard = Vector3.forward;
+    toBoard.Normalize();
 
-        Vector3 toBoard = boardCenter - Camera.main.transform.position;
-        toBoard.y = 0;
-        if (toBoard.sqrMagnitude < 0.001f) toBoard = Vector3.forward;
-        toBoard.Normalize();
+    float angleDiff = Vector3.SignedAngle(cameraLocalForward, toBoard, Vector3.up);
+    playerRig.Rotate(Vector3.up, angleDiff, Space.World);
 
-        float angleDiff = Vector3.SignedAngle(cameraLocalForward, toBoard, Vector3.up);
-        playerRig.Rotate(Vector3.up, angleDiff, Space.World);
+    // 3. Posicion local real de la camara (sin fallback: si es 0 en editor
+    //    la camara esta en el origen del rig, que es lo correcto)
+    Vector3 localCamPos = Camera.main.transform.localPosition;
 
-        // 3. Obtener posición local de la cámara con fallback ergonómico por si no se ha inicializado el tracking en el editor
-        Vector3 localCamPos = Camera.main.transform.localPosition;
-        if (localCamPos.y < 0.1f)
-        {
-            localCamPos = new Vector3(0f, 1.6f, 0f); // Altura de ojo humana estándar (1.6m)
-        }
+    Vector3 localCamPosScaled = Vector3.Scale(localCamPos, playerRig.localScale);
+    Vector3 offsetXZ = playerRig.rotation * new Vector3(localCamPosScaled.x, 0, localCamPosScaled.z);
 
-        // Alinear posición para que la cámara del ojo coincida exactamente con la posición ergonómica objetivo según la fase
-        float heightOffset = (scale >= 0.9f) ? prepHeightOffset : combatHeightOffset;
-        float distanceOffset = (scale >= 0.9f) ? prepDistanceOffset : combatDistanceOffset;
-        Vector3 targetCameraPos = new Vector3(boardCenter.x, boardSurfaceY + heightOffset, boardCenter.z - distanceOffset);
+    if (scale < 0.9f)
+    {
+        // MODO COMBATE (Espectador Miniatura):
+        // La camara debe quedar ENCIMA del borde visual del tablero (boardVisualTop),
+        // no dentro de las paredes decorativas. Se usa boardVisualTop (renderer.bounds.max.y)
+        // en lugar de las celdas, y se centra en XZ directamente sobre el tablero.
+        //
+        // Formula:  camWorldY = rigY + scale * localCamPos.y
+        //        => rigY = desiredCamWorldY - scale * localCamPos.y
+        float desiredCamWorldY = boardVisualTop + combatHeightOffset;
+        float newRigY = desiredCamWorldY - (scale * localCamPos.y);
 
-        // Ajustar la posición del rig restándole el offset local de la cámara escalado y rotado
-        Vector3 localCamPosScaled = Vector3.Scale(localCamPos, playerRig.localScale);
+        // XZ: directamente sobre el centro del tablero (sin distanceOffset)
+        playerRig.position = new Vector3(boardCenter.x - offsetXZ.x, newRigY, boardCenter.z - offsetXZ.z);
+    }
+    else
+    {
+        // MODO ESTRATEGICO (Tamano normal):
+        // La camara queda a prepHeightOffset sobre el campo de juego (celdas),
+        // y a prepDistanceOffset al sur del centro para una vision ergonomica.
+        float distanceOffset = prepDistanceOffset;
+        Vector3 targetPosXZ = new Vector3(boardCenter.x, 0, boardCenter.z - distanceOffset);
+        Vector3 targetCameraPos = new Vector3(targetPosXZ.x, boardSurfaceY + prepHeightOffset, targetPosXZ.z);
         playerRig.position = targetCameraPos - playerRig.rotation * localCamPosScaled;
-
-        // 4. Reposicionar el CharacterController y reactivar si no estamos en escala pequeña (espectador)
-        if (charController != null)
-        {
-            charController.transform.localPosition = savedLocalPos;
-            Physics.SyncTransforms(); // Sincronizar cambios de transform con el motor de física
-
-            if (scale >= 0.9f)
-            {
-                charController.enabled = wasCharEnabled;
-            }
-        }
-
-        if (locomotor != null && scale >= 0.9f)
-        {
-            locomotor.enabled = wasLocomotorEnabled;
-        }
-
-        Debug.Log($"[CombatManager] Rig posicionado en {playerRig.position}. Escalado a: {scale}.");
     }
+
+    // 4. Reposicionar y escalar CharacterController si existe
+    if (charController != null)
+    {
+        charController.transform.localPosition = savedLocalPos;
+        if (scale < 0.9f)
+        {
+            charController.radius = 0.05f;
+            charController.height = 0.18f;
+            charController.stepOffset = 0.02f;
+            charController.center = new Vector3(0, 0.09f, 0);
+        }
+        else
+        {
+            charController.radius = 0.2f;
+            charController.height = 1.6f;
+            charController.stepOffset = 0.3f;
+            charController.center = new Vector3(0, 0.8f, 0);
+        }
+        Physics.SyncTransforms();
+        charController.enabled = wasCharEnabled;
+    }
+
+    if (locomotor != null)
+        locomotor.enabled = wasLocomotorEnabled;
+
+    Debug.Log("[CombatManager] Rig=" + playerRig.position + " scale=" + scale
+        + " camLocalY=" + localCamPos.y + " boardVisualTop=" + boardVisualTop);
+}
 
     IEnumerator ActualizarTextoBoton(GameObject btnObj)
     {
@@ -177,25 +229,37 @@ public class CombatManager : MonoBehaviour
         }
     }
 
-    void CrearFadeCanvas()
-    {
-        // Crear un canvas para el fade a negro sin depender de scripts externos
-        GameObject canvasGo = new GameObject("FadeCanvas");
-        canvasGo.transform.SetParent(Camera.main.transform, false);
-        Canvas canvas = canvasGo.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 999;
+void CrearFadeCanvas()
+{
+    // Canvas en WorldSpace para compatibilidad con VR/Quest 2.
+    // ScreenSpaceOverlay NO se renderiza en headsets estéreo (XR renderiza en
+    // render textures separadas y los overlays de UI no se compositan).
+    GameObject canvasGo = new GameObject("FadeCanvas");
+    canvasGo.transform.SetParent(Camera.main.transform, false);
+    Canvas canvas = canvasGo.AddComponent<Canvas>();
+    canvas.renderMode = RenderMode.WorldSpace;
+    canvas.sortingOrder = 999;
 
-        GameObject imgGo = new GameObject("FadeImage");
-        imgGo.transform.SetParent(canvasGo.transform, false);
-        fadeImage = imgGo.AddComponent<UnityEngine.UI.Image>();
-        fadeImage.color = new Color(0, 0, 0, 0); // Transparente
-        
-        RectTransform rt = fadeImage.GetComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.sizeDelta = Vector2.zero;
-    }
+    // Posicionar el canvas en espacio LOCAL de la cámara:
+    // 0.31m hacia adelante cubre el near clip plane y va delante de cualquier objeto.
+    // 2m x 2m a esa distancia cubre el FOV completo del Quest 2 (90°/96° horizontal).
+    RectTransform canvasRT = canvasGo.GetComponent<RectTransform>();
+    canvasRT.localPosition = new Vector3(0f, 0f, 0.31f);
+    canvasRT.localRotation = Quaternion.identity;
+    canvasRT.localScale = Vector3.one;
+    canvasRT.sizeDelta = new Vector2(2f, 2f);
+
+    GameObject imgGo = new GameObject("FadeImage");
+    imgGo.transform.SetParent(canvasGo.transform, false);
+    fadeImage = imgGo.AddComponent<UnityEngine.UI.Image>();
+    fadeImage.color = new Color(0, 0, 0, 0); // Transparente al inicio
+
+    RectTransform rt = fadeImage.GetComponent<RectTransform>();
+    rt.anchorMin = Vector2.zero;
+    rt.anchorMax = Vector2.one;
+    rt.sizeDelta = Vector2.zero;
+    rt.localScale = Vector3.one;
+}
 
     // Este método será llamado por el botón físico VR (RF05)
     public void IniciarCombate()
@@ -274,14 +338,17 @@ public class CombatManager : MonoBehaviour
             yield return null;
         }
 
-        // 5. Desactivar colliders de las cuadrículas para pelear libremente sobre la mesa
+        // 5. (Modificado) Mantener los colliders del tablero activados. 
+        // Si los desactivamos, el jugador (que ahora tiene físicas) caerá traspasando la mesa debido a la gravedad.
         GridManager gm = FindObjectOfType<GridManager>();
+        /* 
         if (gm != null) {
             foreach(Transform child in gm.transform) {
                 Collider col = child.GetComponent<Collider>();
                 if (col != null) col.enabled = false;
             }
         }
+        */
 
         // 6. Iniciar la lógica de ataque (RF07)
         ActivarFichas();
