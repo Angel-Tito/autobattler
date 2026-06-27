@@ -299,4 +299,24 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         
         _animator.SetTrigger(triggerMuerte);
     }
+
+    public bool EstaMuerto => estaMuerto;
+
+    public void ReiniciarCombate()
+    {
+        StopAllCoroutines(); // detiene LoopVictoria si seguia en marcha
+
+        vidaActual = vidaMaxima;
+        estaMuerto = false;
+        haGanado = false;
+        enCombate = false;
+        objetivoActual = null;
+        enemigos = null;
+
+        if (_animator != null)
+        {
+            _animator.Rebind();
+            _animator.Update(0f);
+        }
+    }
 }

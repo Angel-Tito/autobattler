@@ -18,6 +18,7 @@ public class CampeonSnap : MonoBehaviour
     private Vector3 offsetRaton;
     private Camera  camaraPrincipal;
     private Vector3 posicionAnterior;
+    private Quaternion rotacionAnterior;
 
     private BoxCollider _boxCollider;
     private Rigidbody  _rb;
@@ -31,6 +32,7 @@ public class CampeonSnap : MonoBehaviour
         _boxCollider     = GetComponent<BoxCollider>();
         _rb              = GetComponent<Rigidbody>();
         posicionAnterior = transform.position;
+        rotacionAnterior = transform.rotation;
 
         // Eliminada la lógica de escalasIniciales recursivas que rompía el escalado del combate
 
@@ -56,6 +58,33 @@ public class CampeonSnap : MonoBehaviour
         if (grabbable != null) grabbable.enabled = false;
         // NO desactivar _boxCollider aquí, porque la gravedad sigue activa durante la cinemática de transición
         // y se caerían a través del suelo.
+    }
+
+    public void DesbloquearInteraccion()
+    {
+        if (_wrapper != null) _wrapper.enabled = true;
+        var grabbable = GetComponent<Oculus.Interaction.Grabbable>();
+        if (grabbable != null) grabbable.enabled = true;
+    }
+
+    // Devuelve la pieza a la ultima posicion/rotacion en la que fue colocada
+    // manualmente (la celda donde estaba antes de iniciar combate), y la deja
+    // lista para volver a ser agarrada (fisica no-kinematica).
+    public void RestaurarPosicionOriginal()
+    {
+        ApagarCeldaAnterior();
+        estaAgarrado = false;
+
+        transform.position = posicionAnterior;
+        transform.rotation = rotacionAnterior;
+
+        if (_rb != null)
+        {
+            _rb.velocity = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _rb.isKinematic = false;
+            _rb.useGravity = true;
+        }
     }
 
     // ─────────────────────────────────────────────────────
@@ -85,6 +114,7 @@ public class CampeonSnap : MonoBehaviour
     {
         estaAgarrado     = true;
         posicionAnterior = transform.position;
+        rotacionAnterior = transform.rotation;
 
         // Disparar el sonido de compra/agarre del componente de combate
         var combat = GetComponent<CampeonCombat>();
@@ -118,6 +148,7 @@ public class CampeonSnap : MonoBehaviour
                 colCelda.bounds.center.z);
 
             posicionAnterior = destino;
+            rotacionAnterior = transform.rotation;
 
             // Patrón 2: pulso de confirmación al colocar en celda (RNF05)
             HapticFeedback.Instance?.PulsoColocacion();
