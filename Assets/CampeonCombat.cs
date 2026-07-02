@@ -11,6 +11,22 @@ public class CampeonCombat : MonoBehaviour
     public float velocidadMovimiento = 0.8f;
     public float tiempoEntreAtaques = 1.5f;
 
+    [Header("Movimiento realista")]
+    public float radioSeparacion = 0.15f;   // radio de la fuerza de separacion (no amontonarse)
+    public float margenTablero = 0.15f;     // cuanto pueden salirse del borde de la cuadricula
+    public float velocidadGiro = 10f;
+    public float distanciaCuerpo = 0.11f;   // separacion DURA: dos campeones nunca quedan mas cerca que esto
+
+    // Registro global de combatientes activos, para separacion y matchmaking
+    private static readonly List<CampeonCombat> _combatientesActivos = new List<CampeonCombat>();
+    private static float _minX, _maxX, _minZ, _maxZ;
+    private static bool _limitesListos = false;
+    private bool _tieneTriggerRun = false;
+    private float _proximoRetarget = 0f;
+    private Vector3 _dirSuavizada = Vector3.zero; // direccion de movimiento suavizada (anti-zigzag)
+    private bool _persiguiendo = false;           // histeresis de persecucion (anti-tartamudeo)
+
+
     [Header("Configuración Opcional")]
     
     [Header("Audios")]
@@ -116,6 +132,15 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         if (_animator == null) {
             Debug.LogError($"[CampeonCombat] No se encontró Animator en los hijos de {gameObject.name}");
         }
+        else
+        {
+            // Detectar si el AnimatorController tiene el trigger "Run" (evita warnings
+            // por disparar un parametro inexistente en modelos sin esa animacion)
+            foreach (var p in _animator.parameters)
+            {
+                if (p.type == AnimatorControllerParameterType.Trigger && p.name == "Run") { _tieneTriggerRun = true; break; }
+            }
+        }
 
         _audioSource = GetComponent<AudioSource>();
         if (_audioSource == null) {
@@ -138,7 +163,10 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     {
         enemigos = equipoRival;
         enCombate = true;
-        
+
+        if (!_combatientesActivos.Contains(this)) _combatientesActivos.Add(this);
+        CalcularLimitesTablero();
+
         // Desactivar físicas para que no se caigan o colisionen raro al moverse por código
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null) {
@@ -147,57 +175,181 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
     }
 
+    // Limites de la zona de juego, medidos una sola vez desde las celdas reales
+    static void CalcularLimitesTablero()
+    {
+        if (_limitesListos) return;
+        var gm = FindObjectOfType<GridManager>();
+        if (gm == null || gm.celdas == null || gm.celdas.Count == 0) return;
+        _minX = float.MaxValue; _maxX = float.MinValue; _minZ = float.MaxValue; _maxZ = float.MinValue;
+        foreach (var c in gm.celdas)
+        {
+            if (c == null) continue;
+            _minX = Mathf.Min(_minX, c.position.x); _maxX = Mathf.Max(_maxX, c.position.x);
+            _minZ = Mathf.Min(_minZ, c.position.z); _maxZ = Mathf.Max(_maxZ, c.position.z);
+        }
+        _limitesListos = true;
+    }
+
     void Update()
     {
         if (!enCombate || estaMuerto) return;
 
-        // Limpiar objetivo si murió
-        if (objetivoActual != null && objetivoActual.estaMuerto)
-        {
-            objetivoActual = null;
-        }
+        if (objetivoActual != null && objetivoActual.estaMuerto) objetivoActual = null;
 
-        // Buscar nuevo objetivo si no hay
+        // Matchmaking distribuido: reevaluar periodicamente. Penaliza objetivos que
+        // ya tienen atacantes encima -> el equipo se reparte en duelos en vez de
+        // amontonarse todos sobre una sola victima.
+        if (Time.time >= _proximoRetarget)
+        {
+            _proximoRetarget = Time.time + 0.6f;
+            ElegirObjetivo(false);
+        }
+        if (objetivoActual == null) ElegirObjetivo(true);
+
         if (objetivoActual == null)
         {
-            BuscarObjetivoMasCercano();
-        }
-
-        if (objetivoActual != null)
-        {
-            float distancia = Vector3.Distance(transform.position, objetivoActual.transform.position);
-
-            if (distancia > rangoAtaque)
-            {
-                Vector3 targetPos = objetivoActual.transform.position;
-                targetPos.y = transform.position.y;
-                transform.position = Vector3.MoveTowards(transform.position, targetPos, velocidadMovimiento * Time.deltaTime);
-                
-                Vector3 direccion = (targetPos - transform.position).normalized;
-                if (direccion != Vector3.zero)
-                {
-                    Quaternion rotacionObjetivo = Quaternion.LookRotation(direccion);
-                    transform.rotation = Quaternion.Slerp(transform.rotation, rotacionObjetivo, Time.deltaTime * 10f);
-                }
-            }
-            else
-            {
-                if (Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
-                {
-                    Atacar();
-                }
-            }
-        }
-        else
-        {
-            // Si no hay enemigos vivos, gana.
+            // No quedan enemigos vivos: victoria
             if (!haGanado)
             {
                 haGanado = true;
                 enCombate = false;
                 StartCoroutine(LoopVictoria());
             }
+            return;
         }
+
+        Vector3 miPos = transform.position;
+        Vector3 posObjetivo = objetivoActual.transform.position; posObjetivo.y = miPos.y;
+        float distancia = Vector3.Distance(miPos, posObjetivo);
+
+        Vector3 haciaObjetivo = posObjetivo - miPos; haciaObjetivo.y = 0f;
+        if (haciaObjetivo.sqrMagnitude > 0.0001f) haciaObjetivo.Normalize();
+
+        // HISTERESIS de persecucion: se detiene un poco DENTRO del rango (85%) y no
+        // vuelve a caminar hasta que el objetivo salga claramente (105%). Elimina el
+        // tartamudeo de dar-un-paso-parar-dar-un-paso en el borde del rango.
+        float stopDist = rangoAtaque * 0.85f;
+        float resumeDist = rangoAtaque * 1.05f;
+        if (_persiguiendo) { if (distancia <= stopDist) _persiguiendo = false; }
+        else { if (distancia > resumeDist) _persiguiendo = true; }
+
+        // Separacion con curva CUADRATICA: casi imperceptible en el borde del radio,
+        // pero crece con fuerza al acercarse (supera a la persecucion antes del choque)
+        Vector3 separacion = Vector3.zero;
+        foreach (var otro in _combatientesActivos)
+        {
+            if (otro == null || otro == this || otro.estaMuerto) continue;
+            Vector3 delta = miPos - otro.transform.position; delta.y = 0f;
+            float d = delta.magnitude;
+            if (d < radioSeparacion && d > 0.0001f)
+            {
+                float f = 1f - d / radioSeparacion;
+                separacion += delta.normalized * (f * f * 2.5f);
+            }
+        }
+
+        Vector3 deseo = (_persiguiendo ? haciaObjetivo : Vector3.zero) + separacion;
+        if (deseo.sqrMagnitude > 1f) deseo.Normalize();
+
+        // SUAVIZADO: la direccion real cambia gradualmente hacia la deseada (anti-zigzag)
+        _dirSuavizada = Vector3.Lerp(_dirSuavizada, deseo, Time.deltaTime * 6f);
+        float empuje = _dirSuavizada.magnitude;
+        bool seMueve = empuje > 0.2f;
+
+        if (seMueve)
+        {
+            Vector3 paso = _dirSuavizada.normalized * (Mathf.Clamp01(empuje) * velocidadMovimiento) * Time.deltaTime;
+            Vector3 nuevaPos = miPos + paso;
+            if (_limitesListos)
+            {
+                nuevaPos.x = Mathf.Clamp(nuevaPos.x, _minX - margenTablero, _maxX + margenTablero);
+                nuevaPos.z = Mathf.Clamp(nuevaPos.z, _minZ - margenTablero, _maxZ + margenTablero);
+            }
+            nuevaPos.y = miPos.y;
+            transform.position = nuevaPos;
+
+            Vector3 dirMirada = _persiguiendo ? haciaObjetivo : _dirSuavizada.normalized;
+            if (dirMirada.sqrMagnitude > 0.0001f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dirMirada), Time.deltaTime * velocidadGiro);
+
+            // Correr solo cuando realmente persigue (no por empujoncitos de separacion)
+            if (_tieneTriggerRun && _animator != null && _persiguiendo)
+            {
+                var st = _animator.GetCurrentAnimatorStateInfo(0);
+                if (st.IsName("Idle")) _animator.SetTrigger("Run");
+            }
+        }
+        else
+        {
+            // Quieto: ENCARAR al objetivo (antes atacaban de lado/espaldas)
+            if (haciaObjetivo.sqrMagnitude > 0.0001f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(haciaObjetivo), Time.deltaTime * velocidadGiro);
+        }
+
+        // RESOLUCION DURA de solapamiento: sin importar las fuerzas anteriores, dos
+        // campeones NUNCA quedan mas cerca que distanciaCuerpo. Cada uno se aparta
+        // la mitad del solape por frame (ambos corren esto -> se resuelve completo).
+        // Esto es lo que impide que se "monten" uno encima del otro.
+        foreach (var otro in _combatientesActivos)
+        {
+            if (otro == null || otro == this || otro.estaMuerto) continue;
+            Vector3 delta = transform.position - otro.transform.position; delta.y = 0f;
+            float d = delta.magnitude;
+            if (d < distanciaCuerpo && d > 0.0001f)
+            {
+                Vector3 correccion = delta.normalized * (distanciaCuerpo - d) * 0.5f;
+                Vector3 p = transform.position + correccion;
+                if (_limitesListos)
+                {
+                    p.x = Mathf.Clamp(p.x, _minX - margenTablero, _maxX + margenTablero);
+                    p.z = Mathf.Clamp(p.z, _minZ - margenTablero, _maxZ + margenTablero);
+                }
+                p.y = transform.position.y;
+                transform.position = p;
+            }
+        }
+
+        if (distancia <= rangoAtaque && Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
+        {
+            Atacar();
+        }
+    }
+
+    // Cuantos combatientes vivos (aparte de 'excepto') ya atacan a 'objetivo'
+    static int ContarAtacantes(CampeonCombat objetivo, CampeonCombat excepto)
+    {
+        int n = 0;
+        foreach (var c in _combatientesActivos)
+        {
+            if (c == null || c == excepto || c.estaMuerto) continue;
+            if (c.objetivoActual == objetivo) n++;
+        }
+        return n;
+    }
+
+    // Eleccion de objetivo con reparto: score = distancia + castigo por atacantes
+    // ya asignados a ese enemigo. Con 0.25 por atacante, prefiere caminar a un
+    // enemigo libre antes que sumarse a un dogpile, salvo que este MUY lejos.
+    void ElegirObjetivo(bool forzar)
+    {
+        if (enemigos == null) return;
+        CampeonCombat mejor = null;
+        float mejorScore = float.MaxValue;
+        foreach (var e in enemigos)
+        {
+            if (e == null || e.estaMuerto) continue;
+            float d = Vector3.Distance(transform.position, e.transform.position);
+            float score = d + 0.25f * ContarAtacantes(e, this);
+            if (score < mejorScore) { mejorScore = score; mejor = e; }
+        }
+        if (mejor == null) { if (forzar) objetivoActual = null; return; }
+        if (objetivoActual == null || forzar) { objetivoActual = mejor; return; }
+
+        // Cambiar solo si el nuevo es CLARAMENTE mejor (histeresis anti-titubeo)
+        float dAct = Vector3.Distance(transform.position, objetivoActual.transform.position);
+        float scoreAct = dAct + 0.25f * ContarAtacantes(objetivoActual, this);
+        if (mejor != objetivoActual && mejorScore < scoreAct * 0.7f) objetivoActual = mejor;
     }
 
     IEnumerator LoopVictoria()
@@ -217,22 +369,7 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
     }
 
-    void BuscarObjetivoMasCercano()
-    {
-        float menorDistancia = Mathf.Infinity;
-        foreach (var enemigo in enemigos)
-        {
-            if (enemigo != null && !enemigo.estaMuerto)
-            {
-                float d = Vector3.Distance(transform.position, enemigo.transform.position);
-                if (d < menorDistancia)
-                {
-                    menorDistancia = d;
-                    objetivoActual = enemigo;
-                }
-            }
-        }
-    }
+
 
     void Atacar()
     {
@@ -258,7 +395,7 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
             }
         }
         
-        _animator.SetTrigger(triggerAtq);
+        if (_animator != null) _animator.SetTrigger(triggerAtq); // null-safe: fichas sin Animator no animan pero no crashean
 
         if (clipsSpellCast != null && clipsSpellCast.Length > 0 && _audioSource != null)
         {
@@ -297,7 +434,7 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         string triggerMuerte = "Death";
         if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
         
-        _animator.SetTrigger(triggerMuerte);
+        if (_animator != null) _animator.SetTrigger(triggerMuerte); // null-safe
     }
 
     public bool EstaMuerto => estaMuerto;
@@ -312,11 +449,17 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         enCombate = false;
         objetivoActual = null;
         enemigos = null;
+        _combatientesActivos.Remove(this);
 
         if (_animator != null)
         {
             _animator.Rebind();
             _animator.Update(0f);
         }
+    }
+
+    void OnDisable()
+    {
+        _combatientesActivos.Remove(this);
     }
 }
