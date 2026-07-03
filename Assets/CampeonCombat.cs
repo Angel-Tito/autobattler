@@ -2,6 +2,8 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
+public enum CombatState { Idle, Moving, Attacking, Dead, Victory }
+
 public class CampeonCombat : MonoBehaviour
 {
     [Header("Estadísticas Base")]
@@ -12,20 +14,55 @@ public class CampeonCombat : MonoBehaviour
     public float tiempoEntreAtaques = 1.5f;
 
     [Header("Movimiento realista")]
-    public float radioSeparacion = 0.15f;   // radio de la fuerza de separacion (no amontonarse)
-    public float margenTablero = 0.15f;     // cuanto pueden salirse del borde de la cuadricula
+    [Tooltip("Radio de separación suave (fuerza repulsiva antes de chocar)")]
+    public float radioSeparacionSuave = 0.045f;   
+    public float margenTablero = 0.04f;     
     public float velocidadGiro = 10f;
-    public float distanciaCuerpo = 0.11f;   // separacion DURA: dos campeones nunca quedan mas cerca que esto
+    [Tooltip("Radio de colisión dura (del centro al borde del modelo)")]
+    public float radioCuerpo = 0.055f;
 
-    // Registro global de combatientes activos, para separacion y matchmaking
+    [Header("IA de Combate")]
+    [Tooltip("Cada cuanto se reconsidera el objetivo. Valores muy bajos causan carreras erraticas.")]
+    public float intervaloRetarget = 1.2f;
+    [Range(0f, 1f)]
+    [Tooltip("Ventaja minima que debe tener un nuevo objetivo para cambiar desde el objetivo actual.")]
+    public float ventajaCambioObjetivo = 0.25f;
+    [Tooltip("Penalizacion pequena por cada aliado que ya esta atacando al mismo objetivo.")]
+    public float penalizacionPorAtacante = 0.18f;
+    public int atacantesPreferidosPorObjetivo = 2;
+    public float penalizacionObjetivoSaturado = 0.35f;
+    [Tooltip("Cantidad de puntos alrededor del enemigo que los atacantes pueden ocupar.")]
+    public int puntosAtaquePorObjetivo = 6;
+    public float intervaloRecalculoPuntoAtaque = 0.35f;
+    public float margenPuntoAtaque = 0.02f;
+    public float fuerzaSeparacion = 1.35f;
+    public float distanciaMinimaAntiAtasco = 0.025f;
+    public float segundosParaConsiderarAtasco = 1.2f;
+    public float duracionEmpujeAntiAtasco = 0.45f;
+    public float fuerzaEmpujeAntiAtasco = 0.9f;
+
+    // Registro global de combatientes activos, para la separacion entre unidades
     private static readonly List<CampeonCombat> _combatientesActivos = new List<CampeonCombat>();
     private static float _minX, _maxX, _minZ, _maxZ;
     private static bool _limitesListos = false;
     private bool _tieneTriggerRun = false;
+    private string triggerRunName = "Run";
     private float _proximoRetarget = 0f;
-    private Vector3 _dirSuavizada = Vector3.zero; // direccion de movimiento suavizada (anti-zigzag)
-    private bool _persiguiendo = false;           // histeresis de persecucion (anti-tartamudeo)
+    private Vector3 _dirSuavizada = Vector3.zero;
 
+    // --- NUEVAS VARIABLES ANTI-ATASCOS ---
+    private Vector3 _posicionAnteriorAtasco;
+    private float _tiempoUltimoAtasco = 0f;
+    private int _contadorAtascos = 0;
+    private float _tiempoAtascado = 0f;
+    private float _finEmpujeAntiAtasco = 0f;
+    private Vector3 _direccionEmpujeAntiAtasco = Vector3.zero;
+    private Vector3 _puntoAtaqueActual = Vector3.zero;
+    private CampeonCombat _objetivoPuntoAtaque = null;
+    private float _proximaActualizacionPuntoAtaque = 0f;
+
+    private const float DistanciaMinimaSqr = 0.0001f;
+    private const float IntervaloRevisionAtasco = 0.5f;
 
     [Header("Configuración Opcional")]
     
@@ -36,7 +73,7 @@ public class CampeonCombat : MonoBehaviour
     
     private AudioSource _audioSource;
     private bool haSidoAgarrado = false;
-public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora por ejemplo
+    public string triggerAtaqueOverride = ""; 
 
     private float vidaActual;
     private bool estaMuerto = false;
@@ -52,6 +89,8 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     private float currentYOffset = 0f;
     private bool haGanado = false;
     private GameObject corrector;
+
+    public CombatState EstadoActual { get; private set; } = CombatState.Idle;
 
     void Awake()
     {
@@ -125,7 +164,6 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     void Start()
     {
         vidaActual = vidaMaxima;
-        // Desincronizar ligeramente los ataques para que nunca ataquen en el mismo frame exacto
         tiempoEntreAtaques += Random.Range(-0.15f, 0.15f);
 
         _animator = GetComponentInChildren<Animator>();
@@ -134,18 +172,22 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
         else
         {
-            // Detectar si el AnimatorController tiene el trigger "Run" (evita warnings
-            // por disparar un parametro inexistente en modelos sin esa animacion)
             foreach (var p in _animator.parameters)
             {
-                if (p.type == AnimatorControllerParameterType.Trigger && p.name == "Run") { _tieneTriggerRun = true; break; }
+                if (p.type == AnimatorControllerParameterType.Trigger)
+                {
+                    if (p.name.StartsWith("Run")) { 
+                        triggerRunName = p.name; 
+                        _tieneTriggerRun = true; 
+                    }
+                }
             }
         }
 
         _audioSource = GetComponent<AudioSource>();
         if (_audioSource == null) {
             _audioSource = gameObject.AddComponent<AudioSource>();
-            _audioSource.spatialBlend = 1f; // 3D sound
+            _audioSource.spatialBlend = 1f;
         }
     }
 
@@ -158,16 +200,28 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
     }
 
-
     public void IniciarIA(List<CampeonCombat> equipoRival)
     {
         enemigos = equipoRival;
         enCombate = true;
+        EstadoActual = CombatState.Idle;
+        objetivoActual = null;
+        _objetivoPuntoAtaque = null;
+        _dirSuavizada = Vector3.zero;
+        _proximoRetarget = Time.time + Random.Range(0f, 0.25f);
 
+        _posicionAnteriorAtasco = transform.position;
+        _tiempoUltimoAtasco = Time.time;
+        _contadorAtascos = 0;
+        _tiempoAtascado = 0f;
+        _finEmpujeAntiAtasco = 0f;
+        _direccionEmpujeAntiAtasco = Vector3.zero;
+
+        if (_combatientesActivos.Count == 0)
+            _limitesListos = false;
         if (!_combatientesActivos.Contains(this)) _combatientesActivos.Add(this);
         CalcularLimitesTablero();
 
-        // Desactivar físicas para que no se caigan o colisionen raro al moverse por código
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null) {
             rb.isKinematic = true;
@@ -175,7 +229,6 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
     }
 
-    // Limites de la zona de juego, medidos una sola vez desde las celdas reales
     static void CalcularLimitesTablero()
     {
         if (_limitesListos) return;
@@ -195,69 +248,211 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     {
         if (!enCombate || estaMuerto) return;
 
-        if (objetivoActual != null && objetivoActual.estaMuerto) objetivoActual = null;
+        if (objetivoActual != null && objetivoActual.estaMuerto) 
+        {
+            objetivoActual = null;
+            if (EstadoActual == CombatState.Moving || EstadoActual == CombatState.Attacking)
+            {
+                EstadoActual = CombatState.Idle;
+            }
+        }
 
-        // Matchmaking distribuido: reevaluar periodicamente. Penaliza objetivos que
-        // ya tienen atacantes encima -> el equipo se reparte en duelos en vez de
-        // amontonarse todos sobre una sola victima.
+        switch(EstadoActual)
+        {
+            case CombatState.Idle:
+                UpdateIdle();
+                break;
+            case CombatState.Moving:
+                UpdateMoving();
+                break;
+            case CombatState.Attacking:
+                UpdateAttacking();
+                break;
+            case CombatState.Victory:
+                break;
+        }
+
+        AplicarResolucionDura();
+    }
+
+    void UpdateIdle()
+    {
+        ElegirObjetivo(true);
+        if (objetivoActual == null)
+        {
+            if (!haGanado)
+            {
+                haGanado = true;
+                EstadoActual = CombatState.Victory;
+                enCombate = false;
+                StartCoroutine(LoopVictoria());
+            }
+        }
+        else
+        {
+            EstadoActual = CombatState.Moving;
+        }
+    }
+
+    void UpdateMoving()
+    {
+        if (Time.time >= _proximoRetarget)
+        {
+            _proximoRetarget = Time.time + intervaloRetarget + Random.Range(0f, 0.25f);
+            ElegirObjetivo(false);
+        }
+
+        if (objetivoActual == null)
+        {
+            EstadoActual = CombatState.Idle;
+            return;
+        }
+
+        Vector3 miPos = transform.position;
+        Vector3 posObjetivo = objetivoActual.transform.position;
+        posObjetivo.y = miPos.y;
+
+        float distanciaBordes = DistanciaBordes(objetivoActual);
+        Vector3 haciaObjetivo = DireccionHorizontal(miPos, posObjetivo, transform.forward);
+
+        if (distanciaBordes <= rangoAtaque)
+        {
+            EstadoActual = CombatState.Attacking;
+            _dirSuavizada = Vector3.zero;
+            return;
+        }
+
+        Vector3 puntoAtaque = ObtenerPuntoAtaque(objetivoActual, miPos);
+        Vector3 haciaPuntoAtaque = DireccionHorizontal(miPos, puntoAtaque, haciaObjetivo);
+        float distanciaAlPunto = DistanciaHorizontal(miPos, puntoAtaque);
+
+        Vector3 avance = distanciaAlPunto > 0.025f ? haciaPuntoAtaque : haciaPuntoAtaque * 0.25f;
+        Vector3 separacion = CalcularSeparacion(miPos, haciaPuntoAtaque);
+        Vector3 deseo = avance + separacion * fuerzaSeparacion;
+
+        if (Time.time < _finEmpujeAntiAtasco)
+            deseo += _direccionEmpujeAntiAtasco * fuerzaEmpujeAntiAtasco;
+
+        if (deseo.sqrMagnitude > 1f) deseo.Normalize();
+
+        _dirSuavizada = Vector3.Lerp(_dirSuavizada, deseo, Time.deltaTime * 6f);
+        float empuje = _dirSuavizada.magnitude;
+
+        RevisarAtasco(miPos, haciaPuntoAtaque);
+
+        if (empuje > 0.05f)
+        {
+            float factorLlegada = Mathf.Clamp01(distanciaAlPunto / 0.12f);
+            factorLlegada = Mathf.Lerp(0.45f, 1f, factorLlegada);
+            Vector3 paso = _dirSuavizada.normalized * (Mathf.Clamp01(empuje) * velocidadMovimiento * factorLlegada) * Time.deltaTime;
+            Vector3 nuevaPos = LimitarAlTablero(miPos + paso);
+            nuevaPos.y = miPos.y;
+            transform.position = nuevaPos;
+
+            if (_dirSuavizada.sqrMagnitude > DistanciaMinimaSqr)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(_dirSuavizada.normalized), Time.deltaTime * velocidadGiro);
+
+            if (_tieneTriggerRun && _animator != null)
+            {
+                var st = _animator.GetCurrentAnimatorStateInfo(0);
+                if (st.IsName("Idle")) _animator.SetTrigger(triggerRunName);
+            }
+        }
+        else
+        {
+            if (haciaObjetivo.sqrMagnitude > DistanciaMinimaSqr)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(haciaObjetivo), Time.deltaTime * velocidadGiro);
+        }
+    }
+
+    void UpdateMovingLegacy()
+    {
         if (Time.time >= _proximoRetarget)
         {
             _proximoRetarget = Time.time + 0.6f;
             ElegirObjetivo(false);
         }
-        if (objetivoActual == null) ElegirObjetivo(true);
 
         if (objetivoActual == null)
         {
-            // No quedan enemigos vivos: victoria
-            if (!haGanado)
-            {
-                haGanado = true;
-                enCombate = false;
-                StartCoroutine(LoopVictoria());
-            }
+            EstadoActual = CombatState.Idle;
             return;
         }
 
         Vector3 miPos = transform.position;
         Vector3 posObjetivo = objetivoActual.transform.position; posObjetivo.y = miPos.y;
-        float distancia = Vector3.Distance(miPos, posObjetivo);
+        
+        float distanciaCentros = Vector3.Distance(miPos, posObjetivo);
+        // La mejora realista: La distancia de ataque importa desde los bordes de la malla, no los centros
+        float distanciaBordes = distanciaCentros - this.radioCuerpo - objetivoActual.radioCuerpo;
 
         Vector3 haciaObjetivo = posObjetivo - miPos; haciaObjetivo.y = 0f;
         if (haciaObjetivo.sqrMagnitude > 0.0001f) haciaObjetivo.Normalize();
 
-        // HISTERESIS de persecucion: se detiene un poco DENTRO del rango (85%) y no
-        // vuelve a caminar hasta que el objetivo salga claramente (105%). Elimina el
-        // tartamudeo de dar-un-paso-parar-dar-un-paso en el borde del rango.
-        float stopDist = rangoAtaque * 0.85f;
-        float resumeDist = rangoAtaque * 1.05f;
-        if (_persiguiendo) { if (distancia <= stopDist) _persiguiendo = false; }
-        else { if (distancia > resumeDist) _persiguiendo = true; }
+        if (distanciaBordes <= rangoAtaque)
+        {
+            EstadoActual = CombatState.Attacking;
+            _dirSuavizada = Vector3.zero;
+            return;
+        }
 
-        // Separacion con curva CUADRATICA: casi imperceptible en el borde del radio,
-        // pero crece con fuerza al acercarse (supera a la persecucion antes del choque)
         Vector3 separacion = Vector3.zero;
+        Vector3 evasion = Vector3.zero;
+
         foreach (var otro in _combatientesActivos)
         {
             if (otro == null || otro == this || otro.estaMuerto) continue;
             Vector3 delta = miPos - otro.transform.position; delta.y = 0f;
             float d = delta.magnitude;
-            if (d < radioSeparacion && d > 0.0001f)
+            // Aumentamos el umbral suave para que esquiven antes de chocar violentamente
+            float umbralSuave = (this.radioCuerpo + otro.radioCuerpo) * 1.5f;
+            if (d < umbralSuave && d > 0.0001f)
             {
-                float f = 1f - d / radioSeparacion;
-                separacion += delta.normalized * (f * f * 2.5f);
+                float f = 1f - d / umbralSuave;
+                
+                // --- LÓGICA DE EVASIÓN TANGENCIAL ---
+                float dot = Vector3.Dot(haciaObjetivo, -delta.normalized);
+                if (dot > 0.4f && otro.objetivoActual == this.objetivoActual) // Si el aliado está en nuestra trayectoria y va al mismo enemigo
+                {
+                    Vector3 tangente = Vector3.Cross(Vector3.up, -delta.normalized);
+                    if (Vector3.Dot(tangente, haciaObjetivo) < 0) tangente = -tangente; // Rodear por el lado más corto
+                    evasion += tangente * (f * f * 3f);
+                }
+                else
+                {
+                    separacion += delta.normalized * (f * f * 2.5f);
+                }
             }
         }
 
-        Vector3 deseo = (_persiguiendo ? haciaObjetivo : Vector3.zero) + separacion;
+        Vector3 deseo = haciaObjetivo + separacion + evasion;
         if (deseo.sqrMagnitude > 1f) deseo.Normalize();
 
-        // SUAVIZADO: la direccion real cambia gradualmente hacia la deseada (anti-zigzag)
         _dirSuavizada = Vector3.Lerp(_dirSuavizada, deseo, Time.deltaTime * 6f);
         float empuje = _dirSuavizada.magnitude;
-        bool seMueve = empuje > 0.2f;
 
-        if (seMueve)
+        // --- SISTEMA ANTI-ATASCOS ---
+        if (Time.time - _tiempoUltimoAtasco > 1.0f)
+        {
+            float dAtasco = Vector3.Distance(miPos, _posicionAnteriorAtasco);
+            if (dAtasco < 0.15f) // Nos hemos movido menos de 15 cm en 1 segundo a pesar de querer avanzar
+            {
+                _contadorAtascos++;
+                if (_contadorAtascos >= 2) // Llevamos 2 segundos atascados
+                {
+                    ElegirObjetivo(true); // Cambiamos de objetivo obligatoriamente
+                    _contadorAtascos = 0;
+                }
+            }
+            else
+            {
+                _contadorAtascos = 0; // Nos movimos con éxito, reseteamos el contador
+            }
+            _posicionAnteriorAtasco = miPos;
+            _tiempoUltimoAtasco = Time.time;
+        }
+
+        if (empuje > 0.1f)
         {
             Vector3 paso = _dirSuavizada.normalized * (Mathf.Clamp01(empuje) * velocidadMovimiento) * Time.deltaTime;
             Vector3 nuevaPos = miPos + paso;
@@ -269,54 +464,241 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
             nuevaPos.y = miPos.y;
             transform.position = nuevaPos;
 
-            Vector3 dirMirada = _persiguiendo ? haciaObjetivo : _dirSuavizada.normalized;
-            if (dirMirada.sqrMagnitude > 0.0001f)
-                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dirMirada), Time.deltaTime * velocidadGiro);
+            if (_dirSuavizada.sqrMagnitude > 0.0001f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(_dirSuavizada.normalized), Time.deltaTime * velocidadGiro);
 
-            // Correr solo cuando realmente persigue (no por empujoncitos de separacion)
-            if (_tieneTriggerRun && _animator != null && _persiguiendo)
+            if (_tieneTriggerRun && _animator != null)
             {
                 var st = _animator.GetCurrentAnimatorStateInfo(0);
-                if (st.IsName("Idle")) _animator.SetTrigger("Run");
+                if (st.IsName("Idle")) _animator.SetTrigger(triggerRunName);
             }
         }
         else
         {
-            // Quieto: ENCARAR al objetivo (antes atacaban de lado/espaldas)
             if (haciaObjetivo.sqrMagnitude > 0.0001f)
                 transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(haciaObjetivo), Time.deltaTime * velocidadGiro);
         }
+    }
 
-        // RESOLUCION DURA de solapamiento: sin importar las fuerzas anteriores, dos
-        // campeones NUNCA quedan mas cerca que distanciaCuerpo. Cada uno se aparta
-        // la mitad del solape por frame (ambos corren esto -> se resuelve completo).
-        // Esto es lo que impide que se "monten" uno encima del otro.
-        foreach (var otro in _combatientesActivos)
+    void UpdateAttacking()
+    {
+        if (objetivoActual == null)
         {
-            if (otro == null || otro == this || otro.estaMuerto) continue;
-            Vector3 delta = transform.position - otro.transform.position; delta.y = 0f;
-            float d = delta.magnitude;
-            if (d < distanciaCuerpo && d > 0.0001f)
-            {
-                Vector3 correccion = delta.normalized * (distanciaCuerpo - d) * 0.5f;
-                Vector3 p = transform.position + correccion;
-                if (_limitesListos)
-                {
-                    p.x = Mathf.Clamp(p.x, _minX - margenTablero, _maxX + margenTablero);
-                    p.z = Mathf.Clamp(p.z, _minZ - margenTablero, _maxZ + margenTablero);
-                }
-                p.y = transform.position.y;
-                transform.position = p;
-            }
+            EstadoActual = CombatState.Idle;
+            return;
         }
 
-        if (distancia <= rangoAtaque && Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
+        Vector3 miPos = transform.position;
+        Vector3 posObjetivo = objetivoActual.transform.position; posObjetivo.y = miPos.y;
+        float distanciaBordes = DistanciaBordes(objetivoActual);
+
+        Vector3 haciaObjetivo = DireccionHorizontal(miPos, posObjetivo, transform.forward);
+        if (haciaObjetivo.sqrMagnitude > DistanciaMinimaSqr)
+        {
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(haciaObjetivo), Time.deltaTime * velocidadGiro);
+        }
+
+        // Histeresis: se permite un margen grande para no cancelar el ataque si los aliados lo empujan un poco
+        if (distanciaBordes > rangoAtaque * 1.5f + 0.1f)
+        {
+            EstadoActual = CombatState.Moving;
+            return;
+        }
+
+        if (Time.time - tiempoUltimoAtaque > tiempoEntreAtaques)
         {
             Atacar();
         }
     }
 
-    // Cuantos combatientes vivos (aparte de 'excepto') ya atacan a 'objetivo'
+    float DistanciaBordes(CampeonCombat target)
+    {
+        if (target == null) return float.MaxValue;
+        float distanciaCentros = DistanciaHorizontal(transform.position, target.transform.position);
+        return distanciaCentros - radioCuerpo - target.radioCuerpo;
+    }
+
+    float DistanciaHorizontal(Vector3 a, Vector3 b)
+    {
+        a.y = 0f;
+        b.y = 0f;
+        return Vector3.Distance(a, b);
+    }
+
+    Vector3 DireccionHorizontal(Vector3 desde, Vector3 hasta, Vector3 fallback)
+    {
+        Vector3 dir = hasta - desde;
+        dir.y = 0f;
+        if (dir.sqrMagnitude > DistanciaMinimaSqr)
+            return dir.normalized;
+
+        fallback.y = 0f;
+        if (fallback.sqrMagnitude > DistanciaMinimaSqr)
+            return fallback.normalized;
+
+        return Vector3.forward;
+    }
+
+    Vector3 LimitarAlTablero(Vector3 p)
+    {
+        if (_limitesListos)
+        {
+            p.x = Mathf.Clamp(p.x, _minX - margenTablero, _maxX + margenTablero);
+            p.z = Mathf.Clamp(p.z, _minZ - margenTablero, _maxZ + margenTablero);
+        }
+        return p;
+    }
+
+    Vector3 ObtenerPuntoAtaque(CampeonCombat target, Vector3 miPos)
+    {
+        if (target == null) return miPos;
+
+        if (_objetivoPuntoAtaque == target && Time.time < _proximaActualizacionPuntoAtaque)
+        {
+            _puntoAtaqueActual.y = miPos.y;
+            return _puntoAtaqueActual;
+        }
+
+        Vector3 centro = target.transform.position;
+        centro.y = miPos.y;
+
+        int slots = Mathf.Clamp(puntosAtaquePorObjetivo, 4, 12);
+        float distanciaDeseada = radioCuerpo + target.radioCuerpo + Mathf.Max(margenPuntoAtaque, rangoAtaque * 0.65f);
+        float mejorScore = float.MaxValue;
+        Vector3 mejorPunto = centro;
+
+        for (int i = 0; i < slots; i++)
+        {
+            float angle = (360f / slots) * i + Mathf.Repeat(target.GetInstanceID() * 17f, 360f);
+            float rad = angle * Mathf.Deg2Rad;
+            Vector3 dir = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
+            Vector3 candidato = LimitarAlTablero(centro + dir * distanciaDeseada);
+            candidato.y = miPos.y;
+
+            float score = DistanciaHorizontal(miPos, candidato);
+            foreach (var otro in _combatientesActivos)
+            {
+                if (otro == null || otro == this || otro == target || otro.estaMuerto) continue;
+
+                float distanciaOtro = DistanciaHorizontal(candidato, otro.transform.position);
+                float espacioMinimo = radioCuerpo + otro.radioCuerpo + 0.035f;
+                if (distanciaOtro < espacioMinimo)
+                    score += (espacioMinimo - distanciaOtro) * 4f;
+
+                if (otro.objetivoActual == target && distanciaOtro < 0.12f)
+                    score += (0.12f - distanciaOtro) * 2f;
+            }
+
+            if (score < mejorScore)
+            {
+                mejorScore = score;
+                mejorPunto = candidato;
+            }
+        }
+
+        _objetivoPuntoAtaque = target;
+        _puntoAtaqueActual = mejorPunto;
+        _proximaActualizacionPuntoAtaque = Time.time + intervaloRecalculoPuntoAtaque + Random.Range(0f, 0.12f);
+        return mejorPunto;
+    }
+
+    Vector3 CalcularSeparacion(Vector3 miPos, Vector3 direccionAvance)
+    {
+        Vector3 separacion = Vector3.zero;
+
+        foreach (var otro in _combatientesActivos)
+        {
+            if (otro == null || otro == this || otro == objetivoActual || otro.estaMuerto) continue;
+
+            Vector3 delta = miPos - otro.transform.position;
+            delta.y = 0f;
+            float distancia = delta.magnitude;
+            float radioSuave = Mathf.Max(radioSeparacionSuave, radioCuerpo + otro.radioCuerpo + 0.035f);
+
+            if (distancia < radioSuave)
+            {
+                Vector3 dir = distancia > 0.001f
+                    ? delta / distancia
+                    : Vector3.Cross(Vector3.up, direccionAvance).normalized;
+
+                float fuerza = 1f - Mathf.Clamp01(distancia / radioSuave);
+                separacion += dir * (fuerza * fuerza);
+            }
+        }
+
+        if (separacion.sqrMagnitude > 1f)
+            separacion.Normalize();
+
+        return separacion;
+    }
+
+    void RevisarAtasco(Vector3 miPos, Vector3 direccionAvance)
+    {
+        if (Time.time - _tiempoUltimoAtasco < IntervaloRevisionAtasco) return;
+
+        float deltaTiempo = Time.time - _tiempoUltimoAtasco;
+        float avanceReal = DistanciaHorizontal(miPos, _posicionAnteriorAtasco);
+
+        if (avanceReal < distanciaMinimaAntiAtasco)
+            _tiempoAtascado += deltaTiempo;
+        else
+        {
+            _tiempoAtascado = 0f;
+            _contadorAtascos = 0;
+        }
+
+        if (_tiempoAtascado >= segundosParaConsiderarAtasco)
+        {
+            _contadorAtascos++;
+            ActivarEmpujeAntiAtasco(direccionAvance);
+
+            if (_contadorAtascos >= 2)
+            {
+                ElegirObjetivo(true);
+                _contadorAtascos = 0;
+            }
+
+            _tiempoAtascado = 0f;
+        }
+
+        _posicionAnteriorAtasco = miPos;
+        _tiempoUltimoAtasco = Time.time;
+    }
+
+    void ActivarEmpujeAntiAtasco(Vector3 direccionAvance)
+    {
+        Vector3 lateral = Vector3.Cross(Vector3.up, direccionAvance);
+        if (lateral.sqrMagnitude < DistanciaMinimaSqr)
+            lateral = transform.right;
+
+        lateral.Normalize();
+        if ((GetInstanceID() & 1) == 0)
+            lateral = -lateral;
+
+        _direccionEmpujeAntiAtasco = lateral;
+        _finEmpujeAntiAtasco = Time.time + duracionEmpujeAntiAtasco;
+        _proximaActualizacionPuntoAtaque = 0f;
+    }
+
+    void AplicarResolucionDura()
+    {
+        foreach (var otro in _combatientesActivos)
+        {
+            if (otro == null || otro == this || otro.estaMuerto) continue;
+            Vector3 delta = transform.position - otro.transform.position; delta.y = 0f;
+            float d = delta.magnitude;
+            float umbralDuro = this.radioCuerpo + otro.radioCuerpo;
+            if (d < umbralDuro && d > 0.0001f)
+            {
+                // Corrección suave (0.15f en vez de 0.5f) para evitar que salgan volando por sobrecorrección entre varios
+                Vector3 correccion = delta.normalized * (umbralDuro - d) * 0.15f;
+                Vector3 p = LimitarAlTablero(transform.position + correccion);
+                p.y = transform.position.y;
+                transform.position = p;
+            }
+        }
+    }
+
     static int ContarAtacantes(CampeonCombat objetivo, CampeonCombat excepto)
     {
         int n = 0;
@@ -328,9 +710,31 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         return n;
     }
 
-    // Eleccion de objetivo con reparto: score = distancia + castigo por atacantes
-    // ya asignados a ese enemigo. Con 0.25 por atacante, prefiere caminar a un
-    // enemigo libre antes que sumarse a un dogpile, salvo que este MUY lejos.
+    float CalcularScoreObjetivo(CampeonCombat candidato)
+    {
+        if (candidato == null || candidato.estaMuerto) return float.MaxValue;
+
+        float distancia = DistanciaHorizontal(transform.position, candidato.transform.position);
+        int atacantes = ContarAtacantes(candidato, this);
+        float penalizacion = atacantes * penalizacionPorAtacante;
+
+        int exceso = Mathf.Max(0, atacantes - Mathf.Max(1, atacantesPreferidosPorObjetivo) + 1);
+        penalizacion += exceso * penalizacionObjetivoSaturado;
+
+        return distancia + penalizacion;
+    }
+
+    void AsignarObjetivo(CampeonCombat nuevoObjetivo)
+    {
+        if (objetivoActual == nuevoObjetivo) return;
+
+        objetivoActual = nuevoObjetivo;
+        _objetivoPuntoAtaque = null;
+        _proximaActualizacionPuntoAtaque = 0f;
+        _dirSuavizada = Vector3.zero;
+        _tiempoAtascado = 0f;
+    }
+
     void ElegirObjetivo(bool forzar)
     {
         if (enemigos == null) return;
@@ -339,16 +743,56 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         foreach (var e in enemigos)
         {
             if (e == null || e.estaMuerto) continue;
+            float score = CalcularScoreObjetivo(e);
+            if (score < mejorScore) { mejorScore = score; mejor = e; }
+        }
+
+        if (mejor == null)
+        {
+            if (forzar) AsignarObjetivo(null);
+            return;
+        }
+
+        if (objetivoActual == null || objetivoActual.estaMuerto || forzar)
+        {
+            AsignarObjetivo(mejor);
+            return;
+        }
+
+        float scoreActual = CalcularScoreObjetivo(objetivoActual);
+        float margenCambio = Mathf.Max(0.04f, scoreActual * ventajaCambioObjetivo);
+        bool estoyEnRango = DistanciaBordes(objetivoActual) <= rangoAtaque * 1.25f;
+
+        if (!estoyEnRango && mejor != objetivoActual && mejorScore + margenCambio < scoreActual)
+            AsignarObjetivo(mejor);
+    }
+
+    void ElegirObjetivoLegacy(bool forzar)
+    {
+        if (enemigos == null) return;
+        CampeonCombat mejor = null;
+        float mejorScore = float.MaxValue;
+        foreach (var e in enemigos)
+        {
+            if (e == null || e.estaMuerto) continue;
             float d = Vector3.Distance(transform.position, e.transform.position);
-            float score = d + 0.25f * ContarAtacantes(e, this);
+            
+            int atacantes = ContarAtacantes(e, this);
+            float penalizacion = atacantes * 1.5f; // Cada atacante añade 1.5m de "distancia ficticia"
+            if (atacantes >= 3) penalizacion += 10f; // Si hay 3+ personas pegándole, sumar 10m (no ir a menos que sea el único disponible)
+            
+            float score = d + penalizacion;
             if (score < mejorScore) { mejorScore = score; mejor = e; }
         }
         if (mejor == null) { if (forzar) objetivoActual = null; return; }
         if (objetivoActual == null || forzar) { objetivoActual = mejor; return; }
 
-        // Cambiar solo si el nuevo es CLARAMENTE mejor (histeresis anti-titubeo)
         float dAct = Vector3.Distance(transform.position, objetivoActual.transform.position);
-        float scoreAct = dAct + 0.25f * ContarAtacantes(objetivoActual, this);
+        int actAtacantes = ContarAtacantes(objetivoActual, this);
+        float pAct = actAtacantes * 1.5f;
+        if (actAtacantes >= 3) pAct += 10f;
+        
+        float scoreAct = dAct + pAct;
         if (mejor != objetivoActual && mejorScore < scoreAct * 0.7f) objetivoActual = mejor;
     }
 
@@ -369,8 +813,6 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
     }
 
-
-
     void Atacar()
     {
         tiempoUltimoAtaque = Time.time;
@@ -382,7 +824,6 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         }
         else
         {
-            // Randomize attacks for variety if it's tamkech or others with multiple attacks
             if (gameObject.name.Contains("tamkech"))
             {
                 string[] attacks = { "Attack1", "Attack2", "Spell", "Spell_Dash" };
@@ -390,12 +831,11 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
             }
             else
             {
-                // General random attack (assuming others also have Attack2)
                 triggerAtq = Random.Range(0, 2) == 0 ? "Attack1" : "Attack2";
             }
         }
         
-        if (_animator != null) _animator.SetTrigger(triggerAtq); // null-safe: fichas sin Animator no animan pero no crashean
+        if (_animator != null) _animator.SetTrigger(triggerAtq);
 
         if (clipsSpellCast != null && clipsSpellCast.Length > 0 && _audioSource != null)
         {
@@ -409,7 +849,6 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     IEnumerator AplicarDaño(CampeonCombat target, float dmg, float delay)
     {
         yield return new WaitForSeconds(delay);
-        // Evitar daño mutuo simultáneo si este atacante ya murió durante el retraso
         if (!estaMuerto && target != null && !target.estaMuerto)
         {
             target.RecibirDaño(dmg);
@@ -430,18 +869,19 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
     void Morir()
     {
         estaMuerto = true;
+        EstadoActual = CombatState.Dead;
         
         string triggerMuerte = "Death";
         if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
         
-        if (_animator != null) _animator.SetTrigger(triggerMuerte); // null-safe
+        if (_animator != null) _animator.SetTrigger(triggerMuerte);
     }
 
     public bool EstaMuerto => estaMuerto;
 
     public void ReiniciarCombate()
     {
-        StopAllCoroutines(); // detiene LoopVictoria si seguia en marcha
+        StopAllCoroutines();
 
         vidaActual = vidaMaxima;
         estaMuerto = false;
@@ -449,6 +889,13 @@ public string triggerAtaqueOverride = ""; // Permite forzar "Attack1a" en Aurora
         enCombate = false;
         objetivoActual = null;
         enemigos = null;
+        EstadoActual = CombatState.Idle;
+        _objetivoPuntoAtaque = null;
+        _proximaActualizacionPuntoAtaque = 0f;
+        _dirSuavizada = Vector3.zero;
+        _tiempoAtascado = 0f;
+        _finEmpujeAntiAtasco = 0f;
+        _direccionEmpujeAntiAtasco = Vector3.zero;
         _combatientesActivos.Remove(this);
 
         if (_animator != null)

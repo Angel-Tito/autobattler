@@ -36,8 +36,10 @@ public class CombatManager : MonoBehaviour
     private BotonPulsoIdle botonPulsoIdle;
 
     [Header("Posicion del boton de combate (sigue a la camara)")]
-    public Vector3 botonOffsetReal = new Vector3(0.35f, -0.15f, 0.0f); // metros REALES resp. a la cabeza: +X derecha, +Y arriba, +Z adelante
-    public float botonDistanciaMinimaFactor = 0.4f; // ver explicacion en PosicionarBotonRevancha()
+    public Vector3 botonOffsetPreparacionReal = new Vector3(0.18f, -0.22f, 0.50f); // +X derecha, +Y arriba, +Z adelante
+    public Vector3 botonOffsetCombateReal = new Vector3(0.10f, -0.15f, 0.40f);
+    public float botonDistanciaMinimaFactor = 0.28f; // evita que el boton quede dentro del near clip al encogerse el rig
+    public float botonTamanoMinimoFactor = 0.65f; // mantiene el boton legible/pokable en modo espectador
     
     [Header("Música")]
     public AudioClip musicaFondo;
@@ -91,6 +93,7 @@ void Awake()
 
             // Forzar el texto inicial de forma confiable (sin parpadeo) por encima
             // de cualquier sobreescritura interna del Building Block de Meta.
+            MostrarBotonCombate(true);
             StartCoroutine(ActualizarTextoBoton(btnObj, "INICIAR\nCOMBATE"));
         }
 
@@ -360,60 +363,38 @@ public void AcomodarCamaraErgonomica(float scale)
     Debug.Log("[CombatManager] Rig=" + playerRig.position + " scale=" + scale
         + " camLocalY=" + localCamPos.y + " boardVisualTop=" + boardVisualTop);
 }
-    public void PosicionarBotonRevancha(float scale)
+public void PosicionarBotonRevancha(float scale)
+{
+    if (botonPokeInteractable == null || Camera.main == null) return;
+
+    Transform btn = botonPokeInteractable.transform;
+    Transform cam = Camera.main.transform;
+
+    Vector3 fwdPlano = cam.forward;
+    fwdPlano.y = 0f;
+    if (fwdPlano.sqrMagnitude < 0.0001f) fwdPlano = Vector3.forward;
+    fwdPlano.Normalize();
+
+    Vector3 rightPlano = Quaternion.LookRotation(fwdPlano, Vector3.up) * Vector3.right;
+    Vector3 offsetReal = scale < 0.9f ? botonOffsetCombateReal : botonOffsetPreparacionReal;
+
+    float factorPosicion = Mathf.Max(scale, botonDistanciaMinimaFactor);
+    Vector3 offsetMundo = factorPosicion * (
+        rightPlano * offsetReal.x +
+        Vector3.up  * offsetReal.y +
+        fwdPlano    * offsetReal.z);
+
+    btn.position = cam.position + offsetMundo;
+
+    Vector3 haciaJugador = cam.position - btn.position;
+    if (haciaJugador.sqrMagnitude > 0.0001f)
     {
-        if (botonPokeInteractable == null || Camera.main == null) return;
-
-        Transform btn = botonPokeInteractable.transform;
-        Transform cam = Camera.main.transform;
-
-        // Usamos SOLO el yaw (giro horizontal) de la camara, IGNORANDO el pitch/roll
-        // (la inclinacion de la cabeza). Si usabamos cam.right/cam.up/cam.forward
-        // "crudos", el boton terminaba en una posicion distinta e incomoda cada vez,
-        // segun cuanto el jugador estuviera mirando hacia abajo en ese instante
-        // (que es justo lo normal al jugar sobre un tablero en la mesa).
-        Vector3 fwdPlano = cam.forward; fwdPlano.y = 0f;
-        if (fwdPlano.sqrMagnitude < 0.0001f) fwdPlano = Vector3.forward;
-        fwdPlano.Normalize();
-        Vector3 rightPlano = Quaternion.LookRotation(fwdPlano, Vector3.up) * Vector3.right;
-
-        // Offset en METROS REALES respecto a la cabeza del jugador (no metros de mundo):
-        // se multiplica por "scale" para que, sin importar si estamos a escala 1.0
-        // (modo estrategico) o 0.1 (modo combate/espectador), el boton quede siempre
-        // al mismo alcance FISICO de la mano, en vez de quedar fijo en un punto del
-        // mundo que puede terminar lejos del jugador despues de teletransportarse.
-        //
-        // BUG ARREGLADO ("el boton sigue sin ser practico"): escalar la DISTANCIA
-        // por el mismo factor que el rig (0.1 en combate) lo deja a sol​0 ~3.8cm de
-        // la cara - tecnicamente "alcanzable" pero incomodisimo (casi tocando la
-        // nariz). Usamos un factor de posicion con un PISO minimo
-        // (botonDistanciaMinimaFactor) para que nunca quede mas cerca que eso,
-        // aceptando que en combate haga falta estirar un poco mas el brazo para
-        // tocarlo (es solo una pulsacion puntual, no algo que se repita seguido).
-        // El TAMAÑO visual (mas abajo) si sigue la escala real, para que se vea
-        // proporcional al tablero encogido.
-        float factorPosicion = Mathf.Max(scale, botonDistanciaMinimaFactor);
-        Vector3 offsetMundo = factorPosicion * (
-            rightPlano * botonOffsetReal.x +
-            Vector3.up  * botonOffsetReal.y +
-            fwdPlano    * botonOffsetReal.z);
-
-        btn.position = cam.position + offsetMundo;
-
-        Vector3 haciaJugador = cam.position - btn.position;
-        if (haciaJugador.sqrMagnitude > 0.0001f)
-        {
-            // OJO: el frente LEGIBLE de este modelo de boton esta del lado -Z
-            // local, no +Z (la convencion habitual de Unity). Por eso se usa
-            // -haciaJugador (mirar EN CONTRA del jugador): asi el +Z local queda
-            // apuntando lejos del jugador y la cara -Z (con el texto) queda de
-            // frente a el. Con +haciaJugador se veia el texto espejado/al reves.
-            btn.rotation = Quaternion.LookRotation(-haciaJugador.normalized, Vector3.up);
-        }
-
-        // Tamaño proporcional al jugador actual (mismo factor que el rig)
-        btn.localScale = Vector3.one * 0.05f * scale;
+        btn.rotation = Quaternion.LookRotation(-haciaJugador.normalized, Vector3.up);
     }
+
+    float factorTamano = Mathf.Max(scale, botonTamanoMinimoFactor);
+    btn.localScale = Vector3.one * 0.05f * factorTamano;
+}
 
 
     IEnumerator ActualizarTextoBoton(GameObject btnObj, string texto)
@@ -493,6 +474,7 @@ void CrearFadeCanvas()
             return;
         }
         enCombate = true;
+        combateTerminado = false;
 
         Debug.Log("[CombatManager] Combate Iniciado");
 
@@ -511,10 +493,8 @@ void CrearFadeCanvas()
         // Bloquear el agarre de todas las piezas
         BloquearPiezas();
 
-        // Deshabilitar visualmente el boton (entra en su ColorState "disabled" del SDK de Meta)
-        // y pausar el pulso idle para que no compita con ese estado.
-        if (botonPokeInteractable != null) botonPokeInteractable.enabled = false;
-        if (botonPulsoIdle != null) botonPulsoIdle.SetActivo(false);
+        // Durante el combate el boton no debe aparecer ni poder recibir poke.
+        MostrarBotonCombate(false);
 
         // Iniciar Secuencia Visual (RF05, RF06)
         StartCoroutine(SecuenciaInicioCombate());
@@ -618,13 +598,11 @@ void CrearFadeCanvas()
     void TerminarCombate()
     {
         combateTerminado = true;
+        enCombate = false;
 
-        // Re-habilitar el boton (pasa de "disabled" a "normal") para que
-        // el jugador pueda presionarlo de nuevo y pedir la revancha.
+        // La revancha solo aparece cuando ya no quedan enemigos vivos.
         if (botonPokeInteractable != null)
         {
-            botonPokeInteractable.enabled = true;
-
             // BUG ARREGLADO: el boton solo se posicionaba UNA VEZ, al ENTRAR a
             // combate, segun hacia donde miraba el jugador en ESE instante. Si
             // para cuando el combate termina el jugador ya esta mirando hacia
@@ -633,7 +611,7 @@ void CrearFadeCanvas()
             // Lo reposicionamos AHORA, frente a donde mira el jugador en este
             // momento, para que quede visible y alcanzable de verdad.
             PosicionarBotonRevancha(spectatorScale);
-
+            MostrarBotonCombate(true);
             StartCoroutine(ActualizarTextoBoton(botonPokeInteractable.gameObject, "REVANCHA"));
         }
 
@@ -666,10 +644,9 @@ void CrearFadeCanvas()
         // Reactivar el boton con su texto de inicio y su pulso idle
         if (botonPokeInteractable != null)
         {
-            botonPokeInteractable.enabled = true;
+            MostrarBotonCombate(true);
             StartCoroutine(ActualizarTextoBoton(botonPokeInteractable.gameObject, "INICIAR\nCOMBATE"));
         }
-        if (botonPulsoIdle != null) botonPulsoIdle.SetActivo(true);
 
         Debug.Log("[CombatManager] Revancha lista.");
     }
@@ -693,4 +670,18 @@ void CrearFadeCanvas()
         foreach(var c in equipo1) if(c != null) c.IniciarIA(equipo2);
         foreach(var c in equipo2) if(c != null) c.IniciarIA(equipo1);
     }
+
+
+void MostrarBotonCombate(bool visible)
+{
+    if (botonPokeInteractable == null) return;
+
+    GameObject btnObj = botonPokeInteractable.gameObject;
+    if (btnObj.activeSelf != visible)
+        btnObj.SetActive(visible);
+
+    botonPokeInteractable.enabled = visible;
+    if (botonPulsoIdle != null)
+        botonPulsoIdle.SetActivo(visible && !enCombate && !combateTerminado);
+}
 }
