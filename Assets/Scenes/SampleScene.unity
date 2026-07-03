@@ -1773,6 +1773,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: 3aa0007a4462b4a41b5b8772e3c1f542, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 54ae3446131b0224fb3e7f995f430888, type: 3}
@@ -1815,8 +1819,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.22932838, y: 0.29919246, z: 0.27479932}
-  m_Center: {x: 0.03966446, y: -0.24772455, z: 0.0041063963}
+  m_Size: {x: 0.30498597, y: 0.27542728, z: 0.27479932}
+  m_Center: {x: -0.01068759, y: -0.23584196, z: 0.004106404}
 --- !u!114 &171648179
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5636,6 +5640,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: c311dbad7f969a14f9c4fd007cc987e3, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 28b003f6b5ee7154ba9ed94e9fdada4b, type: 3}
@@ -5678,8 +5686,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.14999992, y: 0.47999996, z: 0.387484}
-  m_Center: {x: 7.80372e-11, y: -0.26000297, z: -0.008748304}
+  m_Size: {x: 0.40680438, y: 0.4549153, z: 0.3113133}
+  m_Center: {x: -0.033910573, y: -0.14493343, z: -0.04683367}
 --- !u!114 &573785656
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5913,7 +5921,7 @@ Transform:
   m_GameObject: {fileID: 573785652}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: -0.00000004371139}
-  m_LocalPosition: {x: 0.052, y: 1.175, z: -0.636}
+  m_LocalPosition: {x: 0.0376, y: 1.1178, z: -0.636}
   m_LocalScale: {x: 0.49, y: 0.49, z: 0.49}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -6101,6 +6109,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: c15ba5622d237d8429587d8b995c4146, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: d0e194ebb3b9b1e4192ab920e8136a10, type: 3}
@@ -6143,8 +6155,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.29319903, y: 0.23564254, z: 0.3512581}
-  m_Center: {x: 0.07159792, y: -0.2764226, z: 0.008504646}
+  m_Size: {x: 0.33327425, y: 0.23564254, z: 0.3512581}
+  m_Center: {x: -0.0067346385, y: -0.2764226, z: 0.008504639}
 --- !u!114 &626552915
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7960,6 +7972,70 @@ Transform:
   - {fileID: 1839887973}
   - {fileID: 1131112469}
   m_Father: {fileID: 1642216353}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &800507793
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 800507795}
+  - component: {fileID: 800507794}
+  m_Layer: 0
+  m_Name: TutorialManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &800507794
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 800507793}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84501c7c104098944b862eb70a17852d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  iniciarAutomaticamente: 1
+  mostrarSoloPrimeraVez: 1
+  mostrarSiempreEnEditor: 1
+  playerPrefsKey: AutobattlerTutorialCompleted_v1
+  panelAncladoAlMundo: 1
+  panelAlturaSobreTableroPreparacion: 0.58
+  panelAlturaSobreTableroCombate: 0.28
+  panelDistanciaFrenteTableroPreparacion: 0.34
+  panelDistanciaFrenteTableroCombate: 0.22
+  panelTamanoBase: 0.001
+  panelTamanoMinimoFactor: 0.72
+  panelSize: {x: 430, y: 245}
+  panelAnchoMaximo: 440
+  panelAltoMinimo: 230
+  panelColor: {r: 0.02, g: 0.025, b: 0.03, a: 0.82}
+  textoColor: {r: 0.95, g: 0.98, b: 1, a: 1}
+  markerColor: {r: 0.2, g: 0.95, b: 1, a: 0.95}
+  markerPadding: 0.06
+  markerWidth: 0.012
+  markerPulse: 0.08
+--- !u!4 &800507795
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 800507793}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &814829522
 GameObject:
@@ -10138,7 +10214,7 @@ Transform:
   m_GameObject: {fileID: 1060507535}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 1, z: -0, w: 0.00000005960465}
-  m_LocalPosition: {x: -0.001082811, y: 1.335, z: -1.2956147}
+  m_LocalPosition: {x: -0.001, y: 1, z: -1.19}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -10625,6 +10701,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: cdced7bd74f4b2d42b903627c1796a09, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 9b4d1142320cc014e8ba422141aeb3ea, type: 3}
@@ -10923,7 +11003,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1083726224}
-  m_Material: {fileID: 1972467652}
+  m_Material: {fileID: 1620298107}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -12745,6 +12825,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: a38474bc4a79edd428aac519da3e9ee0, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 13b27c21c9d755c40a20ae3102bfebf8, type: 3}
@@ -13022,7 +13106,7 @@ Transform:
   m_GameObject: {fileID: 1367808946}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: -0.00000004371139}
-  m_LocalPosition: {x: -0.327, y: 1.14, z: 0.377}
+  m_LocalPosition: {x: -0.327, y: 1.08, z: 0.377}
   m_LocalScale: {x: 0.6208839, y: 0.6208839, z: 0.6208839}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -15000,8 +15084,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.15, y: 0.46396583, z: 0.19464171}
-  m_Center: {x: 0.000000015388329, y: -0.257983, z: 0.02232313}
+  m_Size: {x: 0.15000029, y: 0.42856583, z: 0.19464171}
+  m_Center: {x: 0.000000014936054, y: -0.240283, z: 0.022323128}
 --- !u!114 &1542087441
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15052,6 +15136,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: 5a0b5842e9655624b9dbe70818bfec0b, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: de7cb306abb8b794b934d3f6ffba1eb9, type: 3}
@@ -15531,8 +15619,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.15, y: 0.4758538, z: 0.15}
-  m_Center: {x: 0, y: -0.26392698, z: 0}
+  m_Size: {x: 0.15000007, y: 0.4565429, z: 0.15000007}
+  m_Center: {x: 0, y: -0.25427154, z: 0}
 --- !u!114 &1584233131
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15583,6 +15671,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: a359e12531921ab4f9aa190453fcdb0f, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 770a04ba20a0b9c4e85b05930bb9d4e7, type: 3}
@@ -15909,6 +16001,18 @@ Transform:
   - {fileID: 1200269773}
   m_Father: {fileID: 1331903645}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!134 &1620298107
+PhysicMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: ' (Instance) (Instance) (Instance) (Instance)'
+  dynamicFriction: 0.6
+  staticFriction: 0.6
+  bounciness: 0
+  frictionCombine: 0
+  bounceCombine: 0
 --- !u!1 &1641414738
 GameObject:
   m_ObjectHideFlags: 0
@@ -18266,18 +18370,6 @@ MeshRenderer:
   m_CorrespondingSourceObject: {fileID: -7511558181221131132, guid: 804752c1fcb8a8445829754f260b719d, type: 3}
   m_PrefabInstance: {fileID: 1971382192}
   m_PrefabAsset: {fileID: 0}
---- !u!134 &1972467652
-PhysicMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: ' (Instance) (Instance) (Instance)'
-  dynamicFriction: 0.6
-  staticFriction: 0.6
-  bounciness: 0
-  frictionCombine: 0
-  bounceCombine: 0
 --- !u!1 &1974095569
 GameObject:
   m_ObjectHideFlags: 0
@@ -18831,8 +18923,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.15, y: 0.37297213, z: 0.15}
-  m_Center: {x: 0, y: -0.21248601, z: 0}
+  m_Size: {x: 0.15, y: 0.36286026, z: 0.15}
+  m_Center: {x: 0, y: -0.20743008, z: 0}
 --- !u!114 &2049895523
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18883,6 +18975,10 @@ MonoBehaviour:
   segundosParaConsiderarAtasco: 1.2
   duracionEmpujeAntiAtasco: 0.45
   fuerzaEmpujeAntiAtasco: 0.9
+  desvanecerAlMorir: 1
+  retrasoDesvanecerMuerte: 0.55
+  duracionDesvanecerMuerte: 0.85
+  ocultarRenderersAlMorir: 1
   clipPurchase: {fileID: 8300000, guid: 5d18a5037a0626245b80897b97e47d6d, type: 3}
   clipsSpellCast:
   - {fileID: 8300000, guid: 98a81a789b9abc14d81133ed9a57f23c, type: 3}
@@ -69782,3 +69878,4 @@ SceneRoots:
   - {fileID: 1080855146}
   - {fileID: 333618161}
   - {fileID: 391045134}
+  - {fileID: 800507795}

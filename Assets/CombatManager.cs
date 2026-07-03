@@ -90,6 +90,7 @@ void Awake()
 
             botonPokeInteractable = btnObj.GetComponent<Oculus.Interaction.PokeInteractable>();
             botonPulsoIdle = btnObj.GetComponentInChildren<BotonPulsoIdle>(true);
+            TutorialManager.Instance?.RegistrarBotonCombate(btnObj.transform);
 
             // Forzar el texto inicial de forma confiable (sin parpadeo) por encima
             // de cualquier sobreescritura interna del Building Block de Meta.
@@ -477,6 +478,7 @@ void CrearFadeCanvas()
         combateTerminado = false;
 
         Debug.Log("[CombatManager] Combate Iniciado");
+        TutorialManager.Instance?.OnCombateIniciado();
 
         if (musicSource != null && musicaCombate != null)
         {
@@ -616,6 +618,7 @@ void CrearFadeCanvas()
         }
 
         Debug.Log("[CombatManager] Combate terminado. Presiona el boton para la revancha.");
+        TutorialManager.Instance?.OnCombateTerminado();
     }
 
     public void ReiniciarCombate()
@@ -649,6 +652,7 @@ void CrearFadeCanvas()
         }
 
         Debug.Log("[CombatManager] Revancha lista.");
+        TutorialManager.Instance?.OnRevanchaIniciada();
     }
 
     void ReiniciarFicha(CampeonCombat c)

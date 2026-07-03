@@ -119,6 +119,7 @@ public class CampeonSnap : MonoBehaviour
         // Disparar el sonido de compra/agarre del componente de combate
         var combat = GetComponent<CampeonCombat>();
         if (combat != null) combat.PlayGrabAudio();
+        TutorialManager.Instance?.OnFichaAgarrada(this);
     }
 
     public void SoltarPiezaVR()
@@ -152,6 +153,7 @@ public class CampeonSnap : MonoBehaviour
 
             // Patrón 2: pulso de confirmación al colocar en celda (RNF05)
             HapticFeedback.Instance?.PulsoColocacion();
+            TutorialManager.Instance?.OnFichaColocada(this, true);
 
             StartCoroutine(MoverHaciaCelda(destino));
         }
@@ -159,6 +161,7 @@ public class CampeonSnap : MonoBehaviour
         {
             // Fuera de zona válida → regresa sin pulso de confirmación
             Debug.Log($"[CampeonSnap] {name}: fuera de zona, regresa a {posicionAnterior}");
+            TutorialManager.Instance?.OnFichaColocada(this, false);
             StartCoroutine(MoverHaciaCelda(posicionAnterior));
         }
     }

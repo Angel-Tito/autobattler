@@ -41,6 +41,12 @@ public class CampeonCombat : MonoBehaviour
     public float duracionEmpujeAntiAtasco = 0.45f;
     public float fuerzaEmpujeAntiAtasco = 0.9f;
 
+    [Header("Muerte")]
+    public bool desvanecerAlMorir = true;
+    public float retrasoDesvanecerMuerte = 0.55f;
+    public float duracionDesvanecerMuerte = 0.85f;
+    public bool ocultarRenderersAlMorir = true;
+
     // Registro global de combatientes activos, para la separacion entre unidades
     private static readonly List<CampeonCombat> _combatientesActivos = new List<CampeonCombat>();
     private static float _minX, _maxX, _minZ, _maxZ;
@@ -89,6 +95,45 @@ public class CampeonCombat : MonoBehaviour
     private float currentYOffset = 0f;
     private bool haGanado = false;
     private GameObject corrector;
+    private Renderer[] _renderersVisuales;
+    private bool[] _renderersEnabledInicial;
+    private Collider[] _collidersPropios;
+    private bool[] _collidersEnabledInicial;
+    private readonly List<MaterialRuntimeState> _materialesRuntime = new List<MaterialRuntimeState>();
+    private Coroutine _fadeMuerteCoroutine;
+    private bool _materialesPreparadosParaFade = false;
+    private bool _visualesOcultosPorMuerte = false;
+
+    class MaterialRuntimeState
+    {
+        public Material material;
+        public bool hasColor;
+        public Color color;
+        public bool hasBaseColor;
+        public Color baseColor;
+        public bool hasTintColor;
+        public Color tintColor;
+        public bool hasMode;
+        public float mode;
+        public bool hasSurface;
+        public float surface;
+        public bool hasBlend;
+        public float blend;
+        public bool hasAlphaClip;
+        public float alphaClip;
+        public bool hasSrcBlend;
+        public int srcBlend;
+        public bool hasDstBlend;
+        public int dstBlend;
+        public bool hasZWrite;
+        public int zWrite;
+        public int renderQueue;
+        public string renderType;
+        public bool alphaTestKeyword;
+        public bool alphaBlendKeyword;
+        public bool alphaPremultiplyKeyword;
+        public bool surfaceTransparentKeyword;
+    }
 
     public CombatState EstadoActual { get; private set; } = CombatState.Idle;
 
@@ -165,6 +210,7 @@ public class CampeonCombat : MonoBehaviour
     {
         vidaActual = vidaMaxima;
         tiempoEntreAtaques += Random.Range(-0.15f, 0.15f);
+        CacheVisualesIniciales();
 
         _animator = GetComponentInChildren<Animator>();
         if (_animator == null) {
@@ -866,15 +912,244 @@ public class CampeonCombat : MonoBehaviour
         }
     }
 
+    void CacheVisualesIniciales()
+    {
+        if (_renderersVisuales != null) return;
+
+        _renderersVisuales = GetComponentsInChildren<Renderer>(true);
+        _renderersEnabledInicial = new bool[_renderersVisuales.Length];
+        for (int i = 0; i < _renderersVisuales.Length; i++)
+            _renderersEnabledInicial[i] = _renderersVisuales[i] != null && _renderersVisuales[i].enabled;
+
+        _collidersPropios = GetComponentsInChildren<Collider>(true);
+        _collidersEnabledInicial = new bool[_collidersPropios.Length];
+        for (int i = 0; i < _collidersPropios.Length; i++)
+            _collidersEnabledInicial[i] = _collidersPropios[i] != null && _collidersPropios[i].enabled;
+    }
+
+    void PrepararMaterialesParaFade()
+    {
+        if (_materialesPreparadosParaFade) return;
+
+        CacheVisualesIniciales();
+        _materialesRuntime.Clear();
+        HashSet<Material> registrados = new HashSet<Material>();
+
+        foreach (Renderer renderer in _renderersVisuales)
+        {
+            if (renderer == null) continue;
+
+            Material[] materiales = renderer.materials;
+            foreach (Material material in materiales)
+            {
+                if (material == null || registrados.Contains(material)) continue;
+                registrados.Add(material);
+
+                MaterialRuntimeState estado = new MaterialRuntimeState();
+                estado.material = material;
+                estado.hasColor = material.HasProperty("_Color");
+                estado.color = estado.hasColor ? material.GetColor("_Color") : Color.white;
+                estado.hasBaseColor = material.HasProperty("_BaseColor");
+                estado.baseColor = estado.hasBaseColor ? material.GetColor("_BaseColor") : Color.white;
+                estado.hasTintColor = material.HasProperty("_TintColor");
+                estado.tintColor = estado.hasTintColor ? material.GetColor("_TintColor") : Color.white;
+                estado.hasMode = material.HasProperty("_Mode");
+                estado.mode = estado.hasMode ? material.GetFloat("_Mode") : 0f;
+                estado.hasSurface = material.HasProperty("_Surface");
+                estado.surface = estado.hasSurface ? material.GetFloat("_Surface") : 0f;
+                estado.hasBlend = material.HasProperty("_Blend");
+                estado.blend = estado.hasBlend ? material.GetFloat("_Blend") : 0f;
+                estado.hasAlphaClip = material.HasProperty("_AlphaClip");
+                estado.alphaClip = estado.hasAlphaClip ? material.GetFloat("_AlphaClip") : 0f;
+                estado.hasSrcBlend = material.HasProperty("_SrcBlend");
+                estado.srcBlend = estado.hasSrcBlend ? material.GetInt("_SrcBlend") : 0;
+                estado.hasDstBlend = material.HasProperty("_DstBlend");
+                estado.dstBlend = estado.hasDstBlend ? material.GetInt("_DstBlend") : 0;
+                estado.hasZWrite = material.HasProperty("_ZWrite");
+                estado.zWrite = estado.hasZWrite ? material.GetInt("_ZWrite") : 1;
+                estado.renderQueue = material.renderQueue;
+                estado.renderType = material.GetTag("RenderType", false, "");
+                estado.alphaTestKeyword = material.IsKeywordEnabled("_ALPHATEST_ON");
+                estado.alphaBlendKeyword = material.IsKeywordEnabled("_ALPHABLEND_ON");
+                estado.alphaPremultiplyKeyword = material.IsKeywordEnabled("_ALPHAPREMULTIPLY_ON");
+                estado.surfaceTransparentKeyword = material.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT");
+
+                _materialesRuntime.Add(estado);
+                ConfigurarMaterialTransparente(material);
+            }
+        }
+
+        _materialesPreparadosParaFade = true;
+    }
+
+    void ConfigurarMaterialTransparente(Material material)
+    {
+        material.SetOverrideTag("RenderType", "Transparent");
+        if (material.HasProperty("_Mode")) material.SetFloat("_Mode", 2f);
+        if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+        if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+        if (material.HasProperty("_AlphaClip")) material.SetFloat("_AlphaClip", 0f);
+        if (material.HasProperty("_SrcBlend")) material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        if (material.HasProperty("_DstBlend")) material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        if (material.HasProperty("_ZWrite")) material.SetInt("_ZWrite", 0);
+
+        SetKeyword(material, "_ALPHATEST_ON", false);
+        SetKeyword(material, "_ALPHABLEND_ON", true);
+        SetKeyword(material, "_ALPHAPREMULTIPLY_ON", false);
+        SetKeyword(material, "_SURFACE_TYPE_TRANSPARENT", true);
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+    }
+
+    void SetKeyword(Material material, string keyword, bool enabled)
+    {
+        if (enabled) material.EnableKeyword(keyword);
+        else material.DisableKeyword(keyword);
+    }
+
+    void SetAlphaMateriales(float alpha)
+    {
+        foreach (MaterialRuntimeState estado in _materialesRuntime)
+        {
+            if (estado == null || estado.material == null) continue;
+
+            if (estado.hasColor)
+            {
+                Color color = estado.color;
+                color.a *= alpha;
+                estado.material.SetColor("_Color", color);
+            }
+
+            if (estado.hasBaseColor)
+            {
+                Color color = estado.baseColor;
+                color.a *= alpha;
+                estado.material.SetColor("_BaseColor", color);
+            }
+
+            if (estado.hasTintColor)
+            {
+                Color color = estado.tintColor;
+                color.a *= alpha;
+                estado.material.SetColor("_TintColor", color);
+            }
+        }
+    }
+
+    void BloquearColisionesPorMuerte()
+    {
+        CacheVisualesIniciales();
+        for (int i = 0; i < _collidersPropios.Length; i++)
+        {
+            if (_collidersPropios[i] != null)
+                _collidersPropios[i].enabled = false;
+        }
+    }
+
+    void RestaurarColisionesIniciales()
+    {
+        CacheVisualesIniciales();
+        for (int i = 0; i < _collidersPropios.Length; i++)
+        {
+            if (_collidersPropios[i] != null)
+                _collidersPropios[i].enabled = _collidersEnabledInicial[i];
+        }
+    }
+
+    void OcultarRenderersMuerte()
+    {
+        CacheVisualesIniciales();
+        if (!ocultarRenderersAlMorir) return;
+
+        for (int i = 0; i < _renderersVisuales.Length; i++)
+        {
+            if (_renderersVisuales[i] != null)
+                _renderersVisuales[i].enabled = false;
+        }
+
+        _visualesOcultosPorMuerte = true;
+    }
+
+    void RestaurarVisualesMuerte()
+    {
+        CacheVisualesIniciales();
+
+        for (int i = 0; i < _renderersVisuales.Length; i++)
+        {
+            if (_renderersVisuales[i] != null)
+                _renderersVisuales[i].enabled = _renderersEnabledInicial[i];
+        }
+
+        foreach (MaterialRuntimeState estado in _materialesRuntime)
+        {
+            if (estado == null || estado.material == null) continue;
+
+            if (estado.hasColor) estado.material.SetColor("_Color", estado.color);
+            if (estado.hasBaseColor) estado.material.SetColor("_BaseColor", estado.baseColor);
+            if (estado.hasTintColor) estado.material.SetColor("_TintColor", estado.tintColor);
+            if (estado.hasMode) estado.material.SetFloat("_Mode", estado.mode);
+            if (estado.hasSurface) estado.material.SetFloat("_Surface", estado.surface);
+            if (estado.hasBlend) estado.material.SetFloat("_Blend", estado.blend);
+            if (estado.hasAlphaClip) estado.material.SetFloat("_AlphaClip", estado.alphaClip);
+            if (estado.hasSrcBlend) estado.material.SetInt("_SrcBlend", estado.srcBlend);
+            if (estado.hasDstBlend) estado.material.SetInt("_DstBlend", estado.dstBlend);
+            if (estado.hasZWrite) estado.material.SetInt("_ZWrite", estado.zWrite);
+            estado.material.renderQueue = estado.renderQueue;
+            estado.material.SetOverrideTag("RenderType", estado.renderType);
+            SetKeyword(estado.material, "_ALPHATEST_ON", estado.alphaTestKeyword);
+            SetKeyword(estado.material, "_ALPHABLEND_ON", estado.alphaBlendKeyword);
+            SetKeyword(estado.material, "_ALPHAPREMULTIPLY_ON", estado.alphaPremultiplyKeyword);
+            SetKeyword(estado.material, "_SURFACE_TYPE_TRANSPARENT", estado.surfaceTransparentKeyword);
+        }
+
+        _materialesRuntime.Clear();
+        _materialesPreparadosParaFade = false;
+        _visualesOcultosPorMuerte = false;
+    }
+
+    IEnumerator DesvanecerMuerte()
+    {
+        if (retrasoDesvanecerMuerte > 0f)
+            yield return new WaitForSeconds(retrasoDesvanecerMuerte);
+
+        PrepararMaterialesParaFade();
+
+        float duracion = Mathf.Max(0.01f, duracionDesvanecerMuerte);
+        float t = 0f;
+
+        while (t < duracion)
+        {
+            t += Time.deltaTime;
+            float alpha = 1f - Mathf.Clamp01(t / duracion);
+            SetAlphaMateriales(alpha);
+            yield return null;
+        }
+
+        SetAlphaMateriales(0f);
+        OcultarRenderersMuerte();
+        _fadeMuerteCoroutine = null;
+    }
+
     void Morir()
     {
         estaMuerto = true;
+        enCombate = false;
+        objetivoActual = null;
         EstadoActual = CombatState.Dead;
+        _combatientesActivos.Remove(this);
+        BloquearColisionesPorMuerte();
         
         string triggerMuerte = "Death";
         if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
         
         if (_animator != null) _animator.SetTrigger(triggerMuerte);
+
+        if (_fadeMuerteCoroutine != null)
+            StopCoroutine(_fadeMuerteCoroutine);
+
+        if (desvanecerAlMorir)
+            _fadeMuerteCoroutine = StartCoroutine(DesvanecerMuerte());
+        else
+            OcultarRenderersMuerte();
     }
 
     public bool EstaMuerto => estaMuerto;
@@ -882,6 +1157,9 @@ public class CampeonCombat : MonoBehaviour
     public void ReiniciarCombate()
     {
         StopAllCoroutines();
+        _fadeMuerteCoroutine = null;
+        RestaurarVisualesMuerte();
+        RestaurarColisionesIniciales();
 
         vidaActual = vidaMaxima;
         estaMuerto = false;
@@ -897,6 +1175,9 @@ public class CampeonCombat : MonoBehaviour
         _finEmpujeAntiAtasco = 0f;
         _direccionEmpujeAntiAtasco = Vector3.zero;
         _combatientesActivos.Remove(this);
+        currentYOffset = 0f;
+        if (corrector != null)
+            corrector.transform.localPosition = animatorOriginalPos;
 
         if (_animator != null)
         {
