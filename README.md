@@ -16,7 +16,7 @@
 ## 📖 Contexto y Narrativa
 El jugador asume el rol de un **“Árbitro Eterno”** que organiza un torneo de campeones. Durante la fase de preparación, agarra miniaturas de campeones interactuando físicamente con ellas y las posiciona sobre un tablero rúnico. Al iniciar el combate, el jugador observa una simulación automática, experimentando la estrategia táctica desde una perspectiva omnisciente o inmersiva.
 
-*(El proyecto busca validar la manipulación física directa de las unidades —agarrar, mover, colocar— y la comprensión espacial del tablero, más que implementar sistemas complejos de multijugador o economía).*
+*(El proyecto busca validar la manipulación física directa de las unidades (agarrar, mover, colocar) y la comprensión espacial del tablero, más que implementar sistemas complejos de multijugador o economía).*
 
 ---
 
@@ -63,7 +63,6 @@ El jugador asume el rol de un **“Árbitro Eterno”** que organiza un torneo d
 - **Motor:** Unity `2022.3.62f3` LTS *(Requerido para evitar incompatibilidades)*.
 - **Plataforma Objetivo:** Hardware Meta Quest 2.
 - **Paquetes Principales:**
-  - XR Interaction Toolkit
   - Meta XR SDK (Meta SDK)
 
 ### Estructura Clave de Assets
@@ -145,17 +144,7 @@ Assets/
 4. Presiona **Build And Run**. Unity compila el APK y lo instala directamente en el headset.
 5. En el visor, la aplicación queda disponible en `Biblioteca → Fuentes desconocidas → autobattler`.
 
-**Opción B — Instalación manual del APK**
-1. `File → Build Settings → Build` y guarda `autobattler.apk`.
-2. Instala con **ADB**:
-   ```bash
-   adb devices          # verificar que el Quest aparezca como "device"
-   adb install -r autobattler.apk
-   ```
-   Alternativamente, arrastra el APK en **Meta Quest Developer Hub** o **SideQuest**.
-3. Ejecuta desde `Biblioteca → Fuentes desconocidas`.
-
-**Opción C — Prueba por Quest Link (sin instalar APK)**
+**Opción B — Prueba por Quest Link (sin instalar APK)**
 1. Instala la aplicación de escritorio **Meta Quest Link** en el PC.
 2. Conecta el headset por cable Link o Air Link y activa **Quest Link** en el visor.
 3. Presiona **Play** en el editor de Unity: la escena se renderiza directamente en el headset.
@@ -170,21 +159,6 @@ Assets/
 4. **Combate:** presiona el **botón espacial de inicio** junto al tablero.
 5. **Modo Espectador:** tras la transición, observa el combate a escala real; puedes desplazarte físicamente dentro del área.
 6. **Revancha:** al finalizar la pelea, usa el botón de revancha para reiniciar el ciclo.
-
----
-
-## 🩹 Solución de Problemas
-
-| Problema | Causa probable | Solución |
-|---|---|---|
-| El Quest no aparece en *Run Device* | Depuración USB no aceptada o cable sin datos | Reconectar, aceptar el diálogo en el visor, probar otro cable/puerto |
-| `adb devices` muestra *unauthorized* | Permiso pendiente en el headset | Ponerse el visor y aceptar "Permitir depuración USB" |
-| Pantalla negra al iniciar en el headset | Proveedor XR no habilitado para Android | Activar **Meta XR** en `XR Plug-in Management → Android` y recompilar |
-| Caídas por debajo de 72 FPS | Calidad gráfica excesiva | Usar el perfil de calidad optimizado del proyecto; verificar texturas/mallas optimizadas |
-| Las manos no se detectan | Hand tracking desactivado | Activarlo en la configuración de movimiento del headset |
-| La app no aparece en la Biblioteca | APK instalado como fuente desconocida | Buscar en `Biblioteca → Fuentes desconocidas` |
-
----
 
 **⚠️ Aviso sobre el uso de Assets:** Los modelos 3D y elementos visuales provistos en este repositorio tienen fines estrictamente académicos.
 Para dudas o resolución de problemas en la ejecución, por favor contactar a los integrantes del equipo.
