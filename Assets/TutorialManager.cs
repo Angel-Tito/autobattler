@@ -19,6 +19,15 @@ public class TutorialManager : MonoBehaviour
         Complete
     }
 
+    enum PanelAnchor
+    {
+        Front,
+        Left,
+        Right,
+        Back,
+        CombatSide
+    }
+
     [Header("Flujo")]
     public bool iniciarAutomaticamente = true;
     public bool mostrarSoloPrimeraVez = true;
@@ -33,9 +42,12 @@ public class TutorialManager : MonoBehaviour
     public float panelDistanciaFrenteTableroCombate = 0.22f;
     public float panelTamanoBase = 0.001f;
     public float panelTamanoMinimoFactor = 0.72f;
-    public Vector2 panelSize = new Vector2(430f, 245f);
-    public float panelAnchoMaximo = 440f;
-    public float panelAltoMinimo = 230f;
+    public Vector2 panelSize = new Vector2(340f, 285f);
+    public float panelAnchoMaximo = 360f;
+    public float panelAltoMinimo = 260f;
+    public float panelSeparacionBordePreparacion = 0.42f;
+    public float panelSeparacionBordeCombate = 0.30f;
+    public float velocidadGiroPanel = 8f;
     public Color panelColor = new Color(0.02f, 0.025f, 0.03f, 0.82f);
     public Color textoColor = new Color(0.95f, 0.98f, 1f, 1f);
 
@@ -62,6 +74,7 @@ public class TutorialManager : MonoBehaviour
     float markerRadius = 0.16f;
     float hideAtTime = -1f;
     bool panelNecesitaReubicacion = true;
+    PanelAnchor panelAnchorActual = PanelAnchor.Front;
 
     void Awake()
     {
@@ -150,13 +163,13 @@ public class TutorialManager : MonoBehaviour
 
     public void OnCombateIniciado()
     {
-        if (pasoActual == TutorialStep.Disabled || pasoActual == TutorialStep.Complete) return;
+        // Estos avisos tambien son parte del estado de cada ronda, no solo del
+        // tutorial inicial. Deben mostrarse aunque el tutorial ya este completo.
         SetPaso(TutorialStep.WatchFight);
     }
 
     public void OnCombateTerminado()
     {
-        if (pasoActual == TutorialStep.Disabled || pasoActual == TutorialStep.Complete) return;
         SetPaso(TutorialStep.PressRematch);
     }
 
@@ -182,36 +195,43 @@ public class TutorialManager : MonoBehaviour
                 break;
 
             case TutorialStep.Intro:
+                ConfigurarPanel(PanelAnchor.Front);
                 MostrarMensaje("Prepara tu equipo\nen el tablero.");
                 MostrarMarker(false);
                 break;
 
             case TutorialStep.GrabPiece:
+                ConfigurarPanel(PanelAnchor.Left);
                 MostrarMensaje("Agarra una ficha.");
                 MarcarPrimeraFichaDisponible();
                 break;
 
             case TutorialStep.PlacePiece:
+                ConfigurarPanel(PanelAnchor.Right);
                 MostrarMensaje("Coloca la ficha\nen una celda.");
                 MarcarTablero();
                 break;
 
             case TutorialStep.StartFight:
+                ConfigurarPanel(PanelAnchor.Front);
                 MostrarMensaje("Pulsa\nINICIAR COMBATE.");
                 MarcarBotonCombate();
                 break;
 
             case TutorialStep.WatchFight:
-                MostrarMensaje("Mira la pelea.\nLas fichas quedan bloqueadas.");
+                ConfigurarPanel(PanelAnchor.CombatSide);
+                MostrarMensaje("Muevete con el stick.\nObserva la pelea.");
                 MostrarMarker(false);
                 break;
 
             case TutorialStep.PressRematch:
-                MostrarMensaje("La pelea termino.\nPulsa REVANCHA.");
+                ConfigurarPanel(PanelAnchor.CombatSide);
+                MostrarMensaje("Pelea terminada.\nPulsa A o gatillo\npara revancha.");
                 MarcarBotonCombate();
                 break;
 
             case TutorialStep.Complete:
+                ConfigurarPanel(PanelAnchor.Front);
                 MostrarMensaje("Tutorial listo.\nPrepara otra ronda.");
                 MostrarMarker(false);
                 MarcarTutorialCompletado();
@@ -224,6 +244,12 @@ public class TutorialManager : MonoBehaviour
     {
         PlayerPrefs.SetInt(playerPrefsKey, 1);
         PlayerPrefs.Save();
+    }
+
+    void ConfigurarPanel(PanelAnchor anchor)
+    {
+        panelAnchorActual = anchor;
+        panelNecesitaReubicacion = true;
     }
 
     void MostrarMensaje(string mensaje)
@@ -338,38 +364,58 @@ public class TutorialManager : MonoBehaviour
     {
         Vector3 centroTablero;
         float superficieTablero;
-        ObtenerReferenciaTablero(out centroTablero, out superficieTablero);
+        Bounds boundsTablero;
+        ObtenerReferenciaTablero(out centroTablero, out superficieTablero, out boundsTablero);
 
-        Vector3 direccionJugador = Vector3.back;
-        if (Camera.main != null)
-        {
-            direccionJugador = Camera.main.transform.position - centroTablero;
-            direccionJugador.y = 0f;
-        }
-
-        if (direccionJugador.sqrMagnitude < 0.0001f)
-            direccionJugador = Vector3.back;
-        direccionJugador.Normalize();
+        Vector3 direccionPanel = ObtenerDireccionAnchor(panelAnchorActual);
 
         bool enModoCombate = ObtenerEscalaRig() < 0.9f;
         float altura = enModoCombate ? panelAlturaSobreTableroCombate : panelAlturaSobreTableroPreparacion;
-        float distancia = enModoCombate ? panelDistanciaFrenteTableroCombate : panelDistanciaFrenteTableroPreparacion;
+        float separacion = enModoCombate ? panelSeparacionBordeCombate : panelSeparacionBordePreparacion;
+        float distanciaBase = Mathf.Abs(direccionPanel.x) * boundsTablero.extents.x
+            + Mathf.Abs(direccionPanel.z) * boundsTablero.extents.z;
 
-        Vector3 posicion = centroTablero + direccionJugador * distancia;
+        Vector3 posicion = centroTablero + direccionPanel * (distanciaBase + separacion);
         posicion.y = superficieTablero + altura;
         return posicion;
     }
 
-    void ObtenerReferenciaTablero(out Vector3 centro, out float superficie)
+    Vector3 ObtenerDireccionAnchor(PanelAnchor anchor)
+    {
+        switch (anchor)
+        {
+            case PanelAnchor.Left:
+                return Vector3.left;
+            case PanelAnchor.Right:
+                return Vector3.right;
+            case PanelAnchor.Back:
+                return Vector3.forward;
+            case PanelAnchor.CombatSide:
+                if (CombatManager.Instance != null)
+                {
+                    Vector3 dir = CombatManager.Instance.combatSideDir;
+                    dir.y = 0f;
+                    if (dir.sqrMagnitude > 0.0001f)
+                        // El jugador aparece en combatSideDir mirando al centro.
+                        // El panel va al borde opuesto para quedar frente a el.
+                        return -dir.normalized;
+                }
+                return Vector3.right;
+            default:
+                return Vector3.back;
+        }
+    }
+
+    void ObtenerReferenciaTablero(out Vector3 centro, out float superficie, out Bounds bounds)
     {
         centro = Vector3.zero;
         superficie = 0.75f;
+        bounds = new Bounds(Vector3.zero, new Vector3(2f, 0.1f, 2f));
 
-        if (CombatManager.Instance != null && CombatManager.Instance.tableroRenderer != null)
+        if (CombatManager.Instance != null
+            && CombatManager.Instance.TryObtenerReferenciaTablero(out centro, out superficie, out bounds))
         {
-            Bounds bounds = CombatManager.Instance.tableroRenderer.bounds;
-            centro = bounds.center;
-            superficie = bounds.max.y;
+            return;
         }
 
         GridManager grid = FindObjectOfType<GridManager>();
@@ -378,21 +424,38 @@ public class TutorialManager : MonoBehaviour
         Vector3 suma = Vector3.zero;
         int cuenta = 0;
         float maxY = float.MinValue;
+        Bounds gridBounds = new Bounds();
+        bool boundsListos = false;
 
         foreach (Transform celda in grid.celdas)
         {
             if (celda == null) continue;
             Collider col = celda.GetComponent<Collider>();
-            Vector3 punto = col != null ? col.bounds.center : celda.position;
+            Bounds celdaBounds = col != null
+                ? col.bounds
+                : new Bounds(celda.position, Vector3.one * 0.08f);
+
+            if (!boundsListos)
+            {
+                gridBounds = celdaBounds;
+                boundsListos = true;
+            }
+            else
+            {
+                gridBounds.Encapsulate(celdaBounds);
+            }
+
+            Vector3 punto = celdaBounds.center;
             suma += punto;
             cuenta++;
-            maxY = Mathf.Max(maxY, col != null ? col.bounds.max.y : celda.position.y);
+            maxY = Mathf.Max(maxY, celdaBounds.max.y);
         }
 
         if (cuenta > 0)
         {
             centro = suma / cuenta;
             superficie = maxY;
+            bounds = gridBounds;
         }
     }
 
@@ -409,7 +472,11 @@ public class TutorialManager : MonoBehaviour
         if (forward.sqrMagnitude < 0.0001f)
             forward = Vector3.forward;
 
-        tutorialCanvas.transform.rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
+        Quaternion objetivo = Quaternion.LookRotation(forward.normalized, Vector3.up);
+        tutorialCanvas.transform.rotation = Quaternion.Slerp(
+            tutorialCanvas.transform.rotation,
+            objetivo,
+            1f - Mathf.Exp(-velocidadGiroPanel * Time.deltaTime));
     }
 
     void ActualizarPanelFrenteAJugador()

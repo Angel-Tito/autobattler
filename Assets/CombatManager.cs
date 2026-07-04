@@ -9,6 +9,7 @@ public class CombatManager : MonoBehaviour
 
     [Header("Escala y Transición (RF06)")]
     public Transform playerRig; // El [BuildingBlock] Camera Rig
+    public BoardPlayerMovement boardPlayerMovement;
     public float spectatorScale = 0.1f; // Hará que las piezas parezcan de 2.2 metros
     public float fadeDuration = 1.0f;
 
@@ -18,6 +19,7 @@ public class CombatManager : MonoBehaviour
 
     [Header("Ergonomía de Cámara - Combate (Escala 0.1)")]
     public float combatHeightOffset = 0.0f; // Altura a nivel de la superficie (dentro del tablero)
+    public float alturaOjosMinimaCombate = 0.08f;
     public float combatDistanceOffset = 0.35f; // Más cerca del centro del tablero
     public Vector3 combatSideDir = new Vector3(-1f, 0f, 0f); // Borde al que va la camara: -X=izquierda. (1,0,0)=derecha, (0,0,1)/(0,0,-1)=fondo/frente
     public float combatSideOffset = 0.9f; // Distancia del centro hacia el borde en metros (borde del tablero ~1.05m)
@@ -32,6 +34,9 @@ public class CombatManager : MonoBehaviour
 
     private bool enCombate = false;
     private bool combateTerminado = false;
+    public bool EnCombate => enCombate;
+    public bool CombateTerminado => combateTerminado;
+    public bool TransicionCombateActiva { get; private set; }
     private Color? colorEmisionOriginalCache = null;
     private Oculus.Interaction.PokeInteractable botonPokeInteractable;
     private BotonPulsoIdle botonPulsoIdle;
@@ -48,6 +53,7 @@ public class CombatManager : MonoBehaviour
     private int ultimoConteoParesIgnorados = -1;
     private bool avisoSinColliderJugador = false;
     private bool avisoSinColliderFicha = false;
+    private GridManager gridManagerCache;
 
     private struct PoseInicialFicha
     {
@@ -93,6 +99,8 @@ void Awake()
 
     void Start()
     {
+        PrepararMovimientoTablero();
+
         if (musicaFondo != null && musicSource != null)
         {
             musicSource.clip = musicaFondo;
@@ -163,6 +171,25 @@ void Awake()
         yield return null;
         yield return null;
         AplicarIntangibilidadJugadorConFichas(true);
+    }
+
+    void PrepararMovimientoTablero()
+    {
+        if (playerRig == null) return;
+
+        if (boardPlayerMovement == null)
+            boardPlayerMovement = playerRig.GetComponent<BoardPlayerMovement>();
+        if (boardPlayerMovement == null)
+            boardPlayerMovement = playerRig.gameObject.AddComponent<BoardPlayerMovement>();
+
+        boardPlayerMovement.SetMovimientoActivo(false);
+    }
+
+    void SetMovimientoTableroActivo(bool activo)
+    {
+        PrepararMovimientoTablero();
+        if (boardPlayerMovement != null)
+            boardPlayerMovement.SetMovimientoActivo(activo);
     }
 
     IEnumerator CapturarPosesInicialesFichas()
@@ -403,9 +430,9 @@ IEnumerator AlinearCamaraErgonomicaAlInicio()
     AcomodarCamaraErgonomica(1.0f);
 }
 
-// Raycast hacia el suelo que IGNORA los propios colliders del jugador (manos y
-// controles tienen SphereColliders pequenos que, si no se excluyen, contaminan
-// la medicion justo donde esta parado el jugador con resultados falsos).
+// Raycast hacia el suelo que ignora al jugador y a las fichas. Las colisiones
+// fisicas pueden estar ignoradas, pero los raycasts aun detectan los colliders;
+// sin este filtro una ficha se interpreta como suelo y eleva al jugador.
 bool RaycastSueloReal(Vector3 xz, float desdeY, float maxDist, out float resultY)
 {
     var hits = Physics.RaycastAll(new Vector3(xz.x, desdeY, xz.z), Vector3.down, maxDist);
@@ -414,10 +441,166 @@ bool RaycastSueloReal(Vector3 xz, float desdeY, float maxDist, out float resultY
     foreach (var h in hits)
     {
         if (playerRig != null && h.collider.transform.IsChildOf(playerRig)) continue;
+        if (h.collider.GetComponentInParent<CampeonCombat>() != null) continue;
+        if (h.collider.GetComponentInParent<CampeonSnap>() != null) continue;
         if (h.distance < mejorDist) { mejorDist = h.distance; mejorY = h.point.y; }
     }
     resultY = mejorY;
     return !float.IsNaN(mejorY);
+}
+
+public bool TryObtenerReferenciaTablero(out Vector3 centro, out float superficie, out Bounds bounds)
+{
+    centro = Vector3.zero;
+    superficie = 0.75f;
+    bounds = new Bounds(Vector3.zero, new Vector3(2f, 0.1f, 2f));
+    bool tieneReferencia = false;
+
+    if (tableroRenderer != null)
+    {
+        bounds = tableroRenderer.bounds;
+        centro = bounds.center;
+        superficie = bounds.max.y;
+        tieneReferencia = true;
+    }
+
+    GridManager grid = ObtenerGridManager();
+    if (grid == null || grid.celdas == null || grid.celdas.Count == 0)
+        return tieneReferencia;
+
+    Vector3 suma = Vector3.zero;
+    int cuenta = 0;
+    float maxY = float.MinValue;
+    Bounds gridBounds = new Bounds();
+    bool boundsListos = false;
+
+    foreach (Transform celda in grid.celdas)
+    {
+        if (celda == null) continue;
+
+        Collider col = celda.GetComponent<Collider>();
+        Bounds celdaBounds = col != null
+            ? col.bounds
+            : new Bounds(celda.position, Vector3.one * 0.08f);
+
+        if (!boundsListos)
+        {
+            gridBounds = celdaBounds;
+            boundsListos = true;
+        }
+        else
+        {
+            gridBounds.Encapsulate(celdaBounds);
+        }
+
+        suma += celdaBounds.center;
+        cuenta++;
+        maxY = Mathf.Max(maxY, celdaBounds.max.y);
+    }
+
+    if (cuenta == 0)
+        return tieneReferencia;
+
+    centro = suma / cuenta;
+    superficie = maxY;
+    bounds = gridBounds;
+    return true;
+}
+
+public Vector3 LimitarPosicionAlTablero(Vector3 posicion, float margen)
+{
+    Vector3 centro;
+    float superficie;
+    Bounds bounds;
+    if (!TryObtenerReferenciaTablero(out centro, out superficie, out bounds))
+        return posicion;
+
+    // El jugador aparece en el borde exterior del escenario. Las celdas solo
+    // ocupan el centro, por lo que no sirven como limite de locomocion.
+    if (tableroRenderer != null)
+        bounds = tableroRenderer.bounds;
+
+    float minX = bounds.min.x + margen;
+    float maxX = bounds.max.x - margen;
+    float minZ = bounds.min.z + margen;
+    float maxZ = bounds.max.z - margen;
+
+    if (minX > maxX)
+    {
+        minX = maxX = centro.x;
+    }
+    if (minZ > maxZ)
+    {
+        minZ = maxZ = centro.z;
+    }
+
+    posicion.x = Mathf.Clamp(posicion.x, minX, maxX);
+    posicion.z = Mathf.Clamp(posicion.z, minZ, maxZ);
+    return posicion;
+}
+
+public bool TryObtenerSueloTablero(Vector3 posicion, out float sueloY)
+{
+    Vector3 centro;
+    float superficie;
+    Bounds bounds;
+    bool tieneReferencia = TryObtenerReferenciaTablero(out centro, out superficie, out bounds);
+
+    if (TryObtenerSuperficieCelda(posicion, out sueloY))
+        return true;
+
+    float desdeY = tieneReferencia ? bounds.max.y + 1f : posicion.y + 2f;
+    desdeY = Mathf.Max(desdeY, posicion.y + 0.5f);
+
+    if (RaycastSueloReal(posicion, desdeY, 5f, out sueloY))
+        return true;
+
+    sueloY = superficie;
+    return tieneReferencia;
+}
+
+bool TryObtenerSuperficieCelda(Vector3 posicion, out float superficieY)
+{
+    superficieY = 0f;
+    GridManager grid = ObtenerGridManager();
+    if (grid == null || grid.celdas == null)
+        return false;
+
+    const float toleranciaBorde = 0.025f;
+    float mejorDistancia = float.MaxValue;
+    bool encontrada = false;
+
+    foreach (Transform celda in grid.celdas)
+    {
+        if (celda == null || !celda.gameObject.activeInHierarchy) continue;
+        Collider col = celda.GetComponent<Collider>();
+        if (col == null || !col.enabled) continue;
+
+        Bounds b = col.bounds;
+        bool dentroX = posicion.x >= b.min.x - toleranciaBorde
+            && posicion.x <= b.max.x + toleranciaBorde;
+        bool dentroZ = posicion.z >= b.min.z - toleranciaBorde
+            && posicion.z <= b.max.z + toleranciaBorde;
+        if (!dentroX || !dentroZ) continue;
+
+        Vector2 delta = new Vector2(posicion.x - b.center.x, posicion.z - b.center.z);
+        float distancia = delta.sqrMagnitude;
+        if (distancia < mejorDistancia)
+        {
+            mejorDistancia = distancia;
+            superficieY = b.max.y;
+            encontrada = true;
+        }
+    }
+
+    return encontrada;
+}
+
+GridManager ObtenerGridManager()
+{
+    if (gridManagerCache == null)
+        gridManagerCache = FindObjectOfType<GridManager>();
+    return gridManagerCache;
 }
 
 public void AcomodarCamaraErgonomica(float scale)
@@ -477,7 +660,7 @@ public void AcomodarCamaraErgonomica(float scale)
 
     // Refinamos boardSurfaceY con la Y de las celdas (campo de juego real)
     // y conservamos boardVisualTop como techo del modelo para el modo combate
-    GridManager gmRef = FindObjectOfType<GridManager>();
+    GridManager gmRef = ObtenerGridManager();
     if (gmRef != null && gmRef.celdas.Count > 0 && gmRef.celdas[0] != null)
     {
         boardSurfaceY = gmRef.celdas[0].position.y;
@@ -538,11 +721,6 @@ public void AcomodarCamaraErgonomica(float scale)
         float yawDiff = Vector3.SignedAngle(curFwd, desiredFwd, Vector3.up);
         playerRig.Rotate(Vector3.up, yawDiff, Space.World);
 
-        // Recalcular el offset de la camara DESPUES de rotar, y colocar el rig
-        Vector3 lcp = Camera.main.transform.localPosition;
-        Vector3 lcpScaled = Vector3.Scale(lcp, playerRig.localScale);
-        Vector3 offXZ = playerRig.rotation * new Vector3(lcpScaled.x, 0f, lcpScaled.z);
-
         // BUG ARREGLADO: antes se usaba "boardVisualTop" (altura del totem/adornos
         // centrales, ~1.3m) para CUALQUIER posicion de combate. Eso solo tenia
         // sentido cuando la camara iba sobre el CENTRO (donde si hay un adorno alto
@@ -556,10 +734,16 @@ public void AcomodarCamaraErgonomica(float scale)
         if (!RaycastSueloReal(desiredCamXZ, boardVisualTop + 1f, 5f, out superficieRealAlli))
             superficieRealAlli = boardSurfaceY;
 
-        float desiredCamWorldY = superficieRealAlli + combatHeightOffset;
-        float newRigY = desiredCamWorldY - (scale * lcp.y);
+        float desiredCamWorldY = superficieRealAlli
+            + Mathf.Max(combatHeightOffset, alturaOjosMinimaCombate);
+        Vector3 desiredCameraPosition = new Vector3(
+            desiredCamXZ.x,
+            desiredCamWorldY,
+            desiredCamXZ.z);
 
-        playerRig.position = new Vector3(desiredCamXZ.x - offXZ.x, newRigY, desiredCamXZ.z - offXZ.z);
+        // La camara de Meta esta varios niveles dentro del rig. Tras rotar,
+        // trasladamos usando su posicion mundial real para colocarla exactamente.
+        playerRig.position += desiredCameraPosition - Camera.main.transform.position;
 
         cuerpoObjetivoXZ = desiredCamXZ;
         cuerpoObjetivoY = superficieRealAlli;
@@ -594,9 +778,7 @@ public void AcomodarCamaraErgonomica(float scale)
         float prepYawDiff = Vector3.SignedAngle(curFwdPrep, desiredFwdPrep, Vector3.up);
         playerRig.Rotate(Vector3.up, prepYawDiff, Space.World);
 
-        Vector3 localCamPosPrep = Camera.main.transform.localPosition;
-        Vector3 localCamPosScaledPrep = Vector3.Scale(localCamPosPrep, playerRig.localScale);
-        playerRig.position = targetCameraPos - playerRig.rotation * localCamPosScaledPrep;
+        playerRig.position += targetCameraPos - Camera.main.transform.position;
 
         cuerpoObjetivoXZ = targetPosXZ;
         cuerpoObjetivoY = sueloRealEstrategico;
@@ -809,6 +991,8 @@ void CrearFadeCanvas()
         AsegurarPosesInicialesFichas();
         enCombate = true;
         combateTerminado = false;
+        TransicionCombateActiva = true;
+        SetMovimientoTableroActivo(false);
 
         Debug.Log("[CombatManager] Combate Iniciado");
         TutorialManager.Instance?.OnCombateIniciado();
@@ -893,7 +1077,7 @@ void CrearFadeCanvas()
 
         // 5. (Modificado) Mantener los colliders del tablero activados. 
         // Si los desactivamos, el jugador (que ahora tiene físicas) caerá traspasando la mesa debido a la gravedad.
-        GridManager gm = FindObjectOfType<GridManager>();
+        GridManager gm = ObtenerGridManager();
         /* 
         if (gm != null) {
             foreach(Transform child in gm.transform) {
@@ -904,6 +1088,8 @@ void CrearFadeCanvas()
         */
 
         // 6. Iniciar la lógica de ataque (RF07)
+        TransicionCombateActiva = false;
+        SetMovimientoTableroActivo(true);
         ActivarFichas();
 
         // 7. Vigilar el fin del combate para habilitar la Revancha
@@ -938,6 +1124,8 @@ void CrearFadeCanvas()
     {
         combateTerminado = true;
         enCombate = false;
+        TransicionCombateActiva = false;
+        SetMovimientoTableroActivo(false);
 
         // La revancha solo aparece cuando ya no quedan enemigos vivos.
         if (botonPokeInteractable != null)
@@ -962,6 +1150,8 @@ void CrearFadeCanvas()
     {
         combateTerminado = false;
         enCombate = false;
+        TransicionCombateActiva = true;
+        SetMovimientoTableroActivo(false);
 
         // Restaurar el brillo original del tablero
         if (tableroRenderer != null && colorEmisionOriginalCache.HasValue)
@@ -976,6 +1166,7 @@ void CrearFadeCanvas()
 
         // Volver la camara al modo estrategico (escala 1.0)
         AcomodarCamaraErgonomica(1.0f);
+        TransicionCombateActiva = false;
 
         // Reiniciar y desbloquear cada ficha, devolviendola al inicio exacto de la ronda.
         ReiniciarTodasLasFichas();

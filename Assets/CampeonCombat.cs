@@ -13,6 +13,26 @@ public class CampeonCombat : MonoBehaviour
     public float velocidadMovimiento = 0.8f;
     public float tiempoEntreAtaques = 1.5f;
 
+    [Header("Apoyo sobre el tablero")]
+    public bool ajustarAlturaAlTablero = true;
+    public float margenApoyoCollider = 0.002f;
+    public float velocidadAjusteAltura = 0.65f;
+    public bool corregirPiesAnimados = true;
+    public float margenVisualPies = 0.003f;
+    public float correccionMaximaPies = 0.08f;
+    public float velocidadSubidaPies = 22f;
+    public float velocidadRetornoPies = 8f;
+
+    [Header("Daño dinamico")]
+    [Range(0f, 0.3f)]
+    [Tooltip("Variacion aleatoria aplicada a cada golpe normal.")]
+    public float variacionDaño = 0.08f;
+    [Range(0f, 1f)]
+    [Tooltip("Probabilidad de que un golpe sea critico. 0.15 equivale a 15%.")]
+    public float probabilidadCritico = 0.15f;
+    [Min(1f)]
+    public float multiplicadorCritico = 1.75f;
+
     [Header("Movimiento realista")]
     [Tooltip("Radio de separación suave (fuerza repulsiva antes de chocar)")]
     public float radioSeparacionSuave = 0.045f;   
@@ -52,6 +72,9 @@ public class CampeonCombat : MonoBehaviour
     public bool mostrarNumerosDanio = true;
     public Color colorNumeroDanio = new Color(1f, 0.58f, 0.18f, 1f);
     public Color colorBordeNumeroDanio = new Color(0.15f, 0.055f, 0.015f, 0.92f);
+    public Color colorNumeroCritico = new Color(1f, 0.86f, 0.18f, 1f);
+    public Color colorBordeNumeroCritico = new Color(0.32f, 0.08f, 0.01f, 0.96f);
+    public float escalaNumeroCritico = 1.35f;
     public Color colorFlashDanio = new Color(1f, 0.62f, 0.28f, 1f);
     public float duracionFlashDanio = 0.07f;
     public float duracionNumeroDanio = 0.72f;
@@ -105,6 +128,10 @@ public class CampeonCombat : MonoBehaviour
     private Vector3 animatorOriginalPos;
     private Transform animTr;
     private float currentYOffset = 0f;
+    private float _offsetInferiorCollider;
+    private bool _offsetColliderListo;
+    private Transform[] _puntosApoyoVisual = new Transform[0];
+    private float _offsetVisualSuelo;
     private bool haGanado = false;
     private GameObject corrector;
     private Renderer[] _renderersVisuales;
@@ -220,7 +247,7 @@ public class CampeonCombat : MonoBehaviour
 
             // Interpolación suave para que no dé un salto brusco
             currentYOffset = Mathf.Lerp(currentYOffset, targetYOffset, Time.deltaTime * 8f);
-            corrector.transform.localPosition = animatorOriginalPos + Vector3.up * currentYOffset;
+            ActualizarCorreccionVisualPies();
         }
     }
 
@@ -247,6 +274,8 @@ public class CampeonCombat : MonoBehaviour
                 }
             }
         }
+
+        CachearApoyoTablero();
 
         _audioSource = GetComponent<AudioSource>();
         if (_audioSource == null) {
@@ -337,6 +366,127 @@ public class CampeonCombat : MonoBehaviour
         }
 
         AplicarResolucionDura();
+        MantenerApoyoFisicoEnTablero();
+    }
+
+    void CachearApoyoTablero()
+    {
+        Collider colliderBase = GetComponent<BoxCollider>();
+        if (colliderBase == null)
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>(true);
+            float menorY = float.MaxValue;
+            foreach (Collider col in colliders)
+            {
+                if (col == null || col.isTrigger) continue;
+                if (col.bounds.min.y < menorY)
+                {
+                    menorY = col.bounds.min.y;
+                    colliderBase = col;
+                }
+            }
+        }
+
+        if (colliderBase != null)
+        {
+            _offsetInferiorCollider = colliderBase.bounds.min.y - transform.position.y;
+            _offsetColliderListo = true;
+        }
+
+        List<Transform> puntos = new List<Transform>();
+        foreach (Transform punto in GetComponentsInChildren<Transform>(true))
+        {
+            if (punto == null) continue;
+
+            string nombre = punto.name.ToLowerInvariant();
+            bool esPie = nombre.Contains("foot") || nombre.Contains("toe");
+            bool esAuxiliar = nombre.Contains("end") || nombre.Contains("buff") || nombre.Contains("loc");
+            if (esPie && !esAuxiliar)
+                puntos.Add(punto);
+        }
+
+        _puntosApoyoVisual = puntos.ToArray();
+    }
+
+    void MantenerApoyoFisicoEnTablero()
+    {
+        if (!ajustarAlturaAlTablero || !_offsetColliderListo || CombatManager.Instance == null)
+            return;
+
+        float superficie;
+        if (!CombatManager.Instance.TryObtenerSueloTablero(transform.position, out superficie))
+            return;
+
+        float yObjetivo = superficie - _offsetInferiorCollider + margenApoyoCollider;
+        Vector3 posicion = transform.position;
+        posicion.y = yObjetivo > posicion.y
+            ? yObjetivo
+            : Mathf.MoveTowards(
+                posicion.y,
+                yObjetivo,
+                Mathf.Max(0.01f, velocidadAjusteAltura) * Time.deltaTime);
+        transform.position = posicion;
+    }
+
+    void ActualizarCorreccionVisualPies()
+    {
+        corrector.transform.localPosition =
+            animatorOriginalPos + Vector3.up * (currentYOffset + _offsetVisualSuelo);
+
+        if (!corregirPiesAnimados || estaMuerto || _puntosApoyoVisual.Length == 0
+            || CombatManager.Instance == null)
+        {
+            _offsetVisualSuelo = Mathf.Lerp(
+                _offsetVisualSuelo,
+                0f,
+                1f - Mathf.Exp(-velocidadRetornoPies * Time.deltaTime));
+            corrector.transform.localPosition =
+                animatorOriginalPos + Vector3.up * (currentYOffset + _offsetVisualSuelo);
+            return;
+        }
+
+        float superficie;
+        if (!CombatManager.Instance.TryObtenerSueloTablero(transform.position, out superficie))
+            return;
+
+        float pieMasBajo = float.MaxValue;
+        foreach (Transform punto in _puntosApoyoVisual)
+        {
+            if (punto != null)
+                pieMasBajo = Mathf.Min(pieMasBajo, punto.position.y);
+        }
+
+        if (pieMasBajo == float.MaxValue)
+            return;
+
+        float penetracionMundo = superficie + margenVisualPies - pieMasBajo;
+        float correccionLocal = ConvertirCorreccionMundoALocal(penetracionMundo);
+        float objetivoOffset = Mathf.Clamp(
+            _offsetVisualSuelo + correccionLocal,
+            0f,
+            correccionMaximaPies);
+
+        float velocidad = objetivoOffset > _offsetVisualSuelo
+            ? velocidadSubidaPies
+            : velocidadRetornoPies;
+        _offsetVisualSuelo = objetivoOffset > _offsetVisualSuelo
+            ? objetivoOffset
+            : Mathf.Lerp(
+                _offsetVisualSuelo,
+                objetivoOffset,
+                1f - Mathf.Exp(-Mathf.Max(0.01f, velocidad) * Time.deltaTime));
+
+        corrector.transform.localPosition =
+            animatorOriginalPos + Vector3.up * (currentYOffset + _offsetVisualSuelo);
+    }
+
+    float ConvertirCorreccionMundoALocal(float correccionMundo)
+    {
+        Transform padre = corrector.transform.parent;
+        if (padre == null)
+            return correccionMundo;
+
+        return padre.InverseTransformVector(Vector3.up * correccionMundo).y;
     }
 
     void UpdateIdle()
@@ -907,15 +1057,18 @@ public class CampeonCombat : MonoBehaviour
             if (randomClip != null) _audioSource.PlayOneShot(randomClip);
         }
 
-        StartCoroutine(AplicarDaño(objetivoActual, dañoAtaque, 0.5f));
+        float variacion = Random.Range(1f - variacionDaño, 1f + variacionDaño);
+        bool esCritico = Random.value < probabilidadCritico;
+        float dañoFinal = dañoAtaque * variacion * (esCritico ? multiplicadorCritico : 1f);
+        StartCoroutine(AplicarDaño(objetivoActual, dañoFinal, esCritico, 0.5f));
     }
 
-    IEnumerator AplicarDaño(CampeonCombat target, float dmg, float delay)
+    IEnumerator AplicarDaño(CampeonCombat target, float dmg, bool esCritico, float delay)
     {
         yield return new WaitForSeconds(delay);
         if (!estaMuerto && target != null && !target.estaMuerto)
         {
-            target.ReproducirImpacto(dmg);
+            target.ReproducirImpacto(dmg, esCritico);
             target.RecibirDaño(dmg);
         }
     }
@@ -937,12 +1090,12 @@ public class CampeonCombat : MonoBehaviour
         // Intencionalmente sin estelas: en VR se veian artificiales y tapaban la pelea.
     }
 
-    void ReproducirImpacto(float dmg)
+    void ReproducirImpacto(float dmg, bool esCritico)
     {
         if (!usarVFXCombate) return;
 
         if (mostrarNumerosDanio)
-            CrearNumeroDanio(dmg);
+            CrearNumeroDanio(dmg, esCritico);
     }
 
     void ReproducirPulsoMuerte()
@@ -950,7 +1103,7 @@ public class CampeonCombat : MonoBehaviour
         // La muerte ya se comunica con el desvanecido del cuerpo.
     }
 
-    void CrearNumeroDanio(float dmg)
+    void CrearNumeroDanio(float dmg, bool esCritico)
     {
         int valor = Mathf.Max(1, Mathf.RoundToInt(dmg));
         Vector3 posicion = ObtenerPuntoVFX()
@@ -969,24 +1122,26 @@ public class CampeonCombat : MonoBehaviour
         texto.fontStyle = TMPro.FontStyles.Bold;
         texto.fontSize = 8f;
         texto.enableWordWrapping = false;
-        texto.color = colorNumeroDanio;
+        texto.color = esCritico ? colorNumeroCritico : colorNumeroDanio;
         texto.outlineWidth = 0.22f;
-        texto.outlineColor = colorBordeNumeroDanio;
+        texto.outlineColor = esCritico ? colorBordeNumeroCritico : colorBordeNumeroDanio;
         texto.sortingOrder = 20;
         texto.ForceMeshUpdate();
 
-        go.transform.localScale = Vector3.one * escalaNumeroDanio;
+        float escalaVisual = escalaNumeroDanio * (esCritico ? escalaNumeroCritico : 1f);
+        go.transform.localScale = Vector3.one * escalaVisual;
         OrientarNumeroDanio(go.transform);
         _vfxTemporales.Add(go);
-        StartCoroutine(AnimarNumeroDanio(go, texto, posicion));
+        StartCoroutine(AnimarNumeroDanio(go, texto, posicion, esCritico));
     }
 
-    IEnumerator AnimarNumeroDanio(GameObject go, TMPro.TextMeshPro texto, Vector3 posicionInicial)
+    IEnumerator AnimarNumeroDanio(GameObject go, TMPro.TextMeshPro texto, Vector3 posicionInicial, bool esCritico)
     {
         float duracion = Mathf.Max(0.15f, duracionNumeroDanio);
         float t = 0f;
-        Color colorTexto = colorNumeroDanio;
-        Color colorBorde = colorBordeNumeroDanio;
+        Color colorTexto = esCritico ? colorNumeroCritico : colorNumeroDanio;
+        Color colorBorde = esCritico ? colorBordeNumeroCritico : colorBordeNumeroDanio;
+        float escalaVisual = escalaNumeroDanio * (esCritico ? escalaNumeroCritico : 1f);
 
         while (t < duracion && go != null && texto != null)
         {
@@ -1000,11 +1155,11 @@ public class CampeonCombat : MonoBehaviour
                 : 1f;
 
             go.transform.position = posicionInicial + Vector3.up * (subidaNumeroDanio * Mathf.SmoothStep(0f, 1f, normalizado));
-            go.transform.localScale = Vector3.one * escalaNumeroDanio * pop;
+            go.transform.localScale = Vector3.one * escalaVisual * pop;
             OrientarNumeroDanio(go.transform);
 
             colorTexto.a = alpha;
-            colorBorde.a = colorBordeNumeroDanio.a * alpha;
+            colorBorde.a = (esCritico ? colorBordeNumeroCritico.a : colorBordeNumeroDanio.a) * alpha;
             texto.color = colorTexto;
             texto.outlineColor = colorBorde;
 
@@ -1614,6 +1769,7 @@ public class CampeonCombat : MonoBehaviour
         _direccionEmpujeAntiAtasco = Vector3.zero;
         _combatientesActivos.Remove(this);
         currentYOffset = 0f;
+        _offsetVisualSuelo = 0f;
         if (corrector != null)
             corrector.transform.localPosition = animatorOriginalPos;
 
