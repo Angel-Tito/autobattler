@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
+[DefaultExecutionOrder(10000)]
 public class CombatManager : MonoBehaviour
 {
     public static CombatManager Instance { get; private set; }
@@ -34,12 +35,37 @@ public class CombatManager : MonoBehaviour
     private Color? colorEmisionOriginalCache = null;
     private Oculus.Interaction.PokeInteractable botonPokeInteractable;
     private BotonPulsoIdle botonPulsoIdle;
+    private Oculus.Interaction.PointableUnityEventWrapper botonPointableWrapper;
+    private Collider[] botonColliders;
+    private float botonTextoFontSizeInicial = -1f;
+    private Coroutine botonTextoCoroutine;
 
-    [Header("Posicion del boton de combate (sigue a la camara)")]
-    public Vector3 botonOffsetPreparacionReal = new Vector3(0.18f, -0.22f, 0.50f); // +X derecha, +Y arriba, +Z adelante
-    public Vector3 botonOffsetCombateReal = new Vector3(0.10f, -0.15f, 0.40f);
+    [Header("Interaccion VR en revancha")]
+    public bool aceptarBotonFisicoRevancha = true;
+
+    [Header("Seguridad fisica VR")]
+    public bool jugadorIntangibleConFichas = true;
+    private int ultimoConteoParesIgnorados = -1;
+    private bool avisoSinColliderJugador = false;
+    private bool avisoSinColliderFicha = false;
+
+    private struct PoseInicialFicha
+    {
+        public Vector3 posicion;
+        public Quaternion rotacion;
+        public Vector3 escalaLocal;
+    }
+
+    private readonly Dictionary<Transform, PoseInicialFicha> posesInicialesFichas = new Dictionary<Transform, PoseInicialFicha>();
+    private bool posesInicialesBloqueadas = false;
+
+
+    [Header("Posicion fija del boton de combate")]
+    public Vector3 botonOffsetPreparacionReal = new Vector3(0.28f, -0.18f, 0.65f); // +X derecha, +Y arriba, +Z adelante
+    public Vector3 botonOffsetCombateReal = new Vector3(0.08f, -0.12f, 0.42f);
+    public Vector3 botonOffsetRevanchaReal = new Vector3(0.00f, -0.08f, 0.42f);
     public float botonDistanciaMinimaFactor = 0.28f; // evita que el boton quede dentro del near clip al encogerse el rig
-    public float botonTamanoMinimoFactor = 0.65f; // mantiene el boton legible/pokable en modo espectador
+    public float botonTamanoMinimoFactor = 0.72f; // mantiene el boton legible/pokable en modo espectador
     
     [Header("Música")]
     public AudioClip musicaFondo;
@@ -77,29 +103,275 @@ void Awake()
         GameObject btnObj = GameObject.Find("BotonInicioCombate_Poke");
         if (btnObj != null)
         {
-            // La posicion/rotacion/escala del boton ya NO se fija aqui de forma
-            // fija en el mundo: ahora la calcula PosicionarBotonRevancha() cada vez
-            // que la camara cambia de modo (estrategico <-> combate), para que el
-            // boton siempre quede al alcance del jugador sin importar donde quede.
+            // El boton se ubica en puntos fijos al cambiar de modo. No sigue la
+            // cabeza cada frame, porque eso resulta incomodo en VR.
 
-            var wrapper = btnObj.GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
-            if (wrapper != null)
+            botonPointableWrapper = btnObj.GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+            if (botonPointableWrapper != null)
             {
-                wrapper.WhenSelect.AddListener((evt) => OnBotonPresionado());
+                botonPointableWrapper.WhenSelect.AddListener((evt) => OnBotonPresionado());
             }
 
             botonPokeInteractable = btnObj.GetComponent<Oculus.Interaction.PokeInteractable>();
             botonPulsoIdle = btnObj.GetComponentInChildren<BotonPulsoIdle>(true);
+            botonColliders = btnObj.GetComponentsInChildren<Collider>(true);
+
             TutorialManager.Instance?.RegistrarBotonCombate(btnObj.transform);
 
             // Forzar el texto inicial de forma confiable (sin parpadeo) por encima
             // de cualquier sobreescritura interna del Building Block de Meta.
             MostrarBotonCombate(true);
-            StartCoroutine(ActualizarTextoBoton(btnObj, "INICIAR\nCOMBATE"));
+            CambiarTextoBoton("INICIAR\nCOMBATE");
         }
 
         // Alinear la cámara de inicio de forma ergonómica (mirando al tablero a 15° y 1.3m)
         StartCoroutine(AlinearCamaraErgonomicaAlInicio());
+        StartCoroutine(AplicarIntangibilidadInicial());
+        StartCoroutine(CapturarPosesInicialesFichas());
+    }
+
+    void Update()
+    {
+        if (enCombate && !combateTerminado)
+            AsegurarBotonCombateOculto();
+
+        if (!combateTerminado || !aceptarBotonFisicoRevancha) return;
+
+        if (BotonFisicoRevanchaPresionado())
+            OnBotonPresionado();
+    }
+
+    bool BotonFisicoRevanchaPresionado()
+    {
+#if UNITY_EDITOR
+        if (Input.GetKeyDown(KeyCode.R)) return true;
+#endif
+        try
+        {
+            return OVRInput.GetDown(OVRInput.Button.PrimaryIndexTrigger, OVRInput.Controller.Touch)
+                || OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch)
+                || OVRInput.GetDown(OVRInput.Button.Three, OVRInput.Controller.LTouch);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    IEnumerator AplicarIntangibilidadInicial()
+    {
+        yield return null;
+        yield return null;
+        AplicarIntangibilidadJugadorConFichas(true);
+    }
+
+    IEnumerator CapturarPosesInicialesFichas()
+    {
+        yield return new WaitForSeconds(1.5f);
+        yield return new WaitForFixedUpdate();
+        if (!posesInicialesBloqueadas)
+            GuardarPosesInicialesFichas(false);
+    }
+
+    void AsegurarPosesInicialesFichas()
+    {
+        if (posesInicialesBloqueadas) return;
+        GuardarPosesInicialesFichas(true);
+    }
+
+    void GuardarPosesInicialesFichas(bool bloquear)
+    {
+        posesInicialesFichas.Clear();
+
+        HashSet<Transform> fichas = new HashSet<Transform>();
+        CampeonSnap[] snaps = FindObjectsOfType<CampeonSnap>(true);
+        foreach (CampeonSnap snap in snaps)
+        {
+            if (snap == null) continue;
+            fichas.Add(snap.transform);
+            snap.GuardarEstadoInicialEscena();
+        }
+
+        CampeonCombat[] combatientes = FindObjectsOfType<CampeonCombat>(true);
+        foreach (CampeonCombat combatiente in combatientes)
+        {
+            if (combatiente != null)
+                fichas.Add(combatiente.transform);
+        }
+
+        Rigidbody[] rigidbodies = FindObjectsOfType<Rigidbody>(true);
+        foreach (Rigidbody rb in rigidbodies)
+        {
+            if (rb == null) continue;
+
+            string nombre = rb.gameObject.name.ToLowerInvariant();
+            if (nombre.Contains("ficha"))
+                fichas.Add(rb.transform);
+        }
+
+        foreach (Transform ficha in fichas)
+        {
+            if (ficha == null) continue;
+
+            posesInicialesFichas[ficha] = new PoseInicialFicha
+            {
+                posicion = ficha.position,
+                rotacion = ficha.rotation,
+                escalaLocal = ficha.localScale
+            };
+        }
+
+        if (bloquear)
+            posesInicialesBloqueadas = true;
+
+        Debug.Log("[CombatManager] Poses iniciales de fichas guardadas: " + posesInicialesFichas.Count
+            + (posesInicialesBloqueadas ? " (bloqueadas)" : ""));
+    }
+
+    void AplicarIntangibilidadJugadorConFichas(bool registrarCambio)
+    {
+        if (!jugadorIntangibleConFichas) return;
+
+        Collider[] collidersJugador = ObtenerCollidersFisicosJugador();
+        Collider[] collidersFichas = ObtenerCollidersFichas();
+
+        if (collidersJugador.Length == 0)
+        {
+            if (!avisoSinColliderJugador)
+            {
+                Debug.LogWarning("[CombatManager] No encontre colliders del cuerpo del jugador para volverlo intangible con fichas.");
+                avisoSinColliderJugador = true;
+            }
+            return;
+        }
+
+        if (collidersFichas.Length == 0)
+        {
+            if (!avisoSinColliderFicha)
+            {
+                Debug.LogWarning("[CombatManager] No encontre colliders de fichas para ignorar contra el jugador.");
+                avisoSinColliderFicha = true;
+            }
+            return;
+        }
+
+        int paresIgnorados = 0;
+        foreach (Collider colliderJugador in collidersJugador)
+        {
+            if (colliderJugador == null) continue;
+
+            foreach (Collider colliderFicha in collidersFichas)
+            {
+                if (colliderFicha == null || colliderFicha == colliderJugador) continue;
+                Physics.IgnoreCollision(colliderJugador, colliderFicha, true);
+                paresIgnorados++;
+            }
+        }
+
+        if (registrarCambio || paresIgnorados != ultimoConteoParesIgnorados)
+        {
+            Debug.Log("[CombatManager] Jugador intangible con fichas: "
+                + collidersJugador.Length + " colliders del jugador, "
+                + collidersFichas.Length + " colliders de fichas, "
+                + paresIgnorados + " pares ignorados.");
+            ultimoConteoParesIgnorados = paresIgnorados;
+        }
+    }
+
+    Collider[] ObtenerCollidersFisicosJugador()
+    {
+        HashSet<Collider> colliders = new HashSet<Collider>();
+
+        var charController = playerRig != null
+            ? playerRig.GetComponentInChildren<Oculus.Interaction.Locomotion.CharacterController>(true)
+            : null;
+        if (charController != null)
+            AgregarColliders(colliders, charController.GetComponentsInChildren<Collider>(true));
+
+        if (colliders.Count == 0)
+        {
+            try
+            {
+                GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+                foreach (GameObject player in players)
+                {
+                    if (player == null) continue;
+                    if (playerRig != null && !player.transform.IsChildOf(playerRig) && player.transform != playerRig)
+                        continue;
+
+                    AgregarColliders(colliders, player.GetComponentsInChildren<Collider>(true));
+                }
+            }
+            catch
+            {
+                // Si el tag Player no existe, seguimos con el fallback por nombre.
+            }
+        }
+
+        if (colliders.Count == 0 && playerRig != null)
+        {
+            Collider[] rigColliders = playerRig.GetComponentsInChildren<Collider>(true);
+            foreach (Collider collider in rigColliders)
+            {
+                if (collider == null) continue;
+
+                string path = collider.transform.name.ToLowerInvariant();
+                Transform parent = collider.transform.parent;
+                while (parent != null && parent != playerRig)
+                {
+                    path += "/" + parent.name.ToLowerInvariant();
+                    parent = parent.parent;
+                }
+
+                if (path.Contains("playercontroller") || path.Contains("locomotor"))
+                    colliders.Add(collider);
+            }
+        }
+
+        List<Collider> resultado = new List<Collider>(colliders);
+        return resultado.ToArray();
+    }
+
+    Collider[] ObtenerCollidersFichas()
+    {
+        HashSet<Collider> colliders = new HashSet<Collider>();
+
+        CampeonSnap[] snaps = FindObjectsOfType<CampeonSnap>(true);
+        foreach (CampeonSnap snap in snaps)
+        {
+            if (snap == null) continue;
+            AgregarColliders(colliders, snap.GetComponentsInChildren<Collider>(true));
+        }
+
+        CampeonCombat[] combatientes = FindObjectsOfType<CampeonCombat>(true);
+        foreach (CampeonCombat combatiente in combatientes)
+        {
+            if (combatiente == null) continue;
+            AgregarColliders(colliders, combatiente.GetComponentsInChildren<Collider>(true));
+        }
+
+        Rigidbody[] rigidbodies = FindObjectsOfType<Rigidbody>(true);
+        foreach (Rigidbody rb in rigidbodies)
+        {
+            if (rb == null) continue;
+
+            string nombre = rb.gameObject.name.ToLowerInvariant();
+            if (nombre.Contains("ficha"))
+                AgregarColliders(colliders, rb.GetComponentsInChildren<Collider>(true));
+        }
+
+        List<Collider> resultado = new List<Collider>(colliders);
+        return resultado.ToArray();
+    }
+
+    void AgregarColliders(HashSet<Collider> destino, Collider[] origen)
+    {
+        if (origen == null) return;
+        foreach (Collider collider in origen)
+        {
+            if (collider != null)
+                destino.Add(collider);
+        }
     }
 
 IEnumerator AlinearCamaraErgonomicaAlInicio()
@@ -190,7 +462,7 @@ public void AcomodarCamaraErgonomica(float scale)
     // un near clip tan chico (0.01) rompe la precision del depth buffer y
     // corrompe el render por completo (pantalla gris con manchas borrosas). El
     // fix real y suficiente es el piso de distancia del boton
-    // (botonDistanciaMinimaFactor, en PosicionarBotonRevancha), que ya lo deja
+    // (botonDistanciaMinimaFactor, en PosicionarBotonFijo), que ya lo deja
     // a 0.152m - comodamente por delante del near clip ORIGINAL (0.1m) sin
     // tener que tocarlo. El near/far clip se quedan fijos siempre.
 
@@ -308,7 +580,23 @@ public void AcomodarCamaraErgonomica(float scale)
             sueloRealEstrategico = boardSurfaceY;
 
         Vector3 targetCameraPos = new Vector3(targetPosXZ.x, sueloRealEstrategico + prepHeightOffset, targetPosXZ.z);
-        playerRig.position = targetCameraPos - playerRig.rotation * localCamPosScaled;
+
+        Vector3 desiredFwdPrep = boardCenter - targetCameraPos;
+        desiredFwdPrep.y = 0f;
+        if (desiredFwdPrep.sqrMagnitude < 0.0001f) desiredFwdPrep = Vector3.forward;
+        desiredFwdPrep.Normalize();
+
+        Vector3 curFwdPrep = Camera.main.transform.forward;
+        curFwdPrep.y = 0f;
+        if (curFwdPrep.sqrMagnitude < 0.0001f) curFwdPrep = playerRig.forward;
+        curFwdPrep.Normalize();
+
+        float prepYawDiff = Vector3.SignedAngle(curFwdPrep, desiredFwdPrep, Vector3.up);
+        playerRig.Rotate(Vector3.up, prepYawDiff, Space.World);
+
+        Vector3 localCamPosPrep = Camera.main.transform.localPosition;
+        Vector3 localCamPosScaledPrep = Vector3.Scale(localCamPosPrep, playerRig.localScale);
+        playerRig.position = targetCameraPos - playerRig.rotation * localCamPosScaledPrep;
 
         cuerpoObjetivoXZ = targetPosXZ;
         cuerpoObjetivoY = sueloRealEstrategico;
@@ -359,12 +647,16 @@ public void AcomodarCamaraErgonomica(float scale)
     if (locomotor != null)
         locomotor.enabled = wasLocomotorEnabled;
 
-    PosicionarBotonRevancha(scale);
+    PosicionarBotonFijo(scale, false);
+    if (enCombate && !combateTerminado)
+        MostrarBotonCombate(false);
+
+    AplicarIntangibilidadJugadorConFichas(false);
 
     Debug.Log("[CombatManager] Rig=" + playerRig.position + " scale=" + scale
         + " camLocalY=" + localCamPos.y + " boardVisualTop=" + boardVisualTop);
 }
-public void PosicionarBotonRevancha(float scale)
+public void PosicionarBotonFijo(float scale, bool avisoRevancha)
 {
     if (botonPokeInteractable == null || Camera.main == null) return;
 
@@ -376,8 +668,11 @@ public void PosicionarBotonRevancha(float scale)
     if (fwdPlano.sqrMagnitude < 0.0001f) fwdPlano = Vector3.forward;
     fwdPlano.Normalize();
 
-    Vector3 rightPlano = Quaternion.LookRotation(fwdPlano, Vector3.up) * Vector3.right;
-    Vector3 offsetReal = scale < 0.9f ? botonOffsetCombateReal : botonOffsetPreparacionReal;
+    Quaternion orientacionPlano = Quaternion.LookRotation(fwdPlano, Vector3.up);
+    Vector3 rightPlano = orientacionPlano * Vector3.right;
+    Vector3 offsetReal = avisoRevancha
+        ? botonOffsetRevanchaReal
+        : (scale < 0.9f ? botonOffsetCombateReal : botonOffsetPreparacionReal);
 
     float factorPosicion = Mathf.Max(scale, botonDistanciaMinimaFactor);
     Vector3 offsetMundo = factorPosicion * (
@@ -386,19 +681,43 @@ public void PosicionarBotonRevancha(float scale)
         fwdPlano    * offsetReal.z);
 
     btn.position = cam.position + offsetMundo;
-
-    Vector3 haciaJugador = cam.position - btn.position;
-    if (haciaJugador.sqrMagnitude > 0.0001f)
-    {
-        btn.rotation = Quaternion.LookRotation(-haciaJugador.normalized, Vector3.up);
-    }
+    btn.rotation = orientacionPlano;
 
     float factorTamano = Mathf.Max(scale, botonTamanoMinimoFactor);
-    btn.localScale = Vector3.one * 0.05f * factorTamano;
+    float tamanoBase = avisoRevancha ? 0.044f : 0.05f;
+    btn.localScale = Vector3.one * tamanoBase * factorTamano;
 }
 
 
-    IEnumerator ActualizarTextoBoton(GameObject btnObj, string texto)
+    void CambiarTextoBoton(string texto, float escalaFuente = 1f)
+    {
+        if (botonPokeInteractable == null) return;
+
+        DetenerTextoBoton();
+        botonTextoCoroutine = StartCoroutine(ActualizarTextoBoton(
+            botonPokeInteractable.gameObject,
+            texto,
+            escalaFuente));
+    }
+
+    void DetenerTextoBoton()
+    {
+        if (botonTextoCoroutine == null) return;
+
+        StopCoroutine(botonTextoCoroutine);
+        botonTextoCoroutine = null;
+    }
+
+    void AsegurarBotonCombateOculto()
+    {
+        if (botonPokeInteractable == null) return;
+
+        GameObject btnObj = botonPokeInteractable.gameObject;
+        if (btnObj.activeSelf || botonPokeInteractable.enabled)
+            MostrarBotonCombate(false);
+    }
+
+    IEnumerator ActualizarTextoBoton(GameObject btnObj, string texto, float escalaFuente = 1f)
     {
         // Meta tiene scripts internos que sobreescriben el texto al iniciar.
         // Reforzamos el texto CADA FRAME durante 1s en vez de con huecos de 0.2s,
@@ -406,17 +725,29 @@ public void PosicionarBotonRevancha(float scale)
         var textMesh = btnObj.GetComponentInChildren<TMPro.TextMeshPro>(true);
         if (textMesh == null) yield break;
 
+        if (botonTextoFontSizeInicial <= 0f)
+            botonTextoFontSizeInicial = textMesh.fontSize;
+
+        float fontSizeObjetivo = botonTextoFontSizeInicial * Mathf.Max(0.35f, escalaFuente);
+
         float t = 0f;
         while (t < 1.0f)
         {
             if (textMesh.text != texto)
             {
                 textMesh.text = texto;
-                textMesh.ForceMeshUpdate();
             }
+
+            textMesh.fontSize = fontSizeObjetivo;
+            textMesh.alignment = TMPro.TextAlignmentOptions.Center;
+            textMesh.enableWordWrapping = false;
+            textMesh.ForceMeshUpdate();
+
             t += Time.deltaTime;
             yield return null;
         }
+
+        botonTextoCoroutine = null;
     }
 
 void CrearFadeCanvas()
@@ -474,6 +805,8 @@ void CrearFadeCanvas()
             Debug.LogWarning("[CombatManager] IniciarCombate bloqueado por seguridad en el inicio de la escena.");
             return;
         }
+
+        AsegurarPosesInicialesFichas();
         enCombate = true;
         combateTerminado = false;
 
@@ -508,8 +841,11 @@ void CrearFadeCanvas()
         var piezas = FindObjectsOfType<CampeonSnap>();
         foreach (var p in piezas)
         {
+            p.GuardarEstadoInicioRonda();
             p.BloquearInteraccion();
         }
+
+        AplicarIntangibilidadJugadorConFichas(false);
     }
 
     IEnumerator SecuenciaInicioCombate()
@@ -543,6 +879,7 @@ void CrearFadeCanvas()
         if (playerRig != null)
         {
             AcomodarCamaraErgonomica(spectatorScale);
+            MostrarBotonCombate(false);
         }
 
         // 4. Fade to Clear
@@ -612,12 +949,12 @@ void CrearFadeCanvas()
             // en un punto que ya no esta a la vista -> parecia que "no aparecia".
             // Lo reposicionamos AHORA, frente a donde mira el jugador en este
             // momento, para que quede visible y alcanzable de verdad.
-            PosicionarBotonRevancha(spectatorScale);
-            MostrarBotonCombate(true);
-            StartCoroutine(ActualizarTextoBoton(botonPokeInteractable.gameObject, "REVANCHA"));
+            PosicionarBotonFijo(spectatorScale, true);
+            MostrarBotonCombate(true, false);
+            CambiarTextoBoton("PRESIONA\nA/GATILLO\nREVANCHA", 0.55f);
         }
 
-        Debug.Log("[CombatManager] Combate terminado. Presiona el boton para la revancha.");
+        Debug.Log("[CombatManager] Combate terminado. Presiona A o gatillo para la revancha.");
         TutorialManager.Instance?.OnCombateTerminado();
     }
 
@@ -640,19 +977,68 @@ void CrearFadeCanvas()
         // Volver la camara al modo estrategico (escala 1.0)
         AcomodarCamaraErgonomica(1.0f);
 
-        // Reiniciar y desbloquear cada ficha, devolviendola a su celda original
-        foreach (var c in equipo1) ReiniciarFicha(c);
-        foreach (var c in equipo2) ReiniciarFicha(c);
+        // Reiniciar y desbloquear cada ficha, devolviendola al inicio exacto de la ronda.
+        ReiniciarTodasLasFichas();
 
         // Reactivar el boton con su texto de inicio y su pulso idle
         if (botonPokeInteractable != null)
         {
             MostrarBotonCombate(true);
-            StartCoroutine(ActualizarTextoBoton(botonPokeInteractable.gameObject, "INICIAR\nCOMBATE"));
+            CambiarTextoBoton("INICIAR\nCOMBATE");
         }
 
         Debug.Log("[CombatManager] Revancha lista.");
         TutorialManager.Instance?.OnRevanchaIniciada();
+    }
+
+    void ReiniciarTodasLasFichas()
+    {
+        if (posesInicialesFichas.Count == 0)
+            GuardarPosesInicialesFichas(true);
+
+        var combatientes = FindObjectsOfType<CampeonCombat>(true);
+        foreach (var combatiente in combatientes)
+        {
+            if (combatiente != null)
+                combatiente.ReiniciarCombate();
+        }
+
+        foreach (var par in posesInicialesFichas)
+        {
+            Transform ficha = par.Key;
+            if (ficha == null) continue;
+
+            var snap = ficha.GetComponent<CampeonSnap>();
+            if (snap != null)
+            {
+                ficha.localScale = par.Value.escalaLocal;
+                snap.RestaurarEstadoInicialForzado(par.Value.posicion, par.Value.rotacion);
+                snap.DesbloquearInteraccion();
+            }
+            else
+            {
+                RestaurarPoseFisica(ficha, par.Value);
+            }
+        }
+
+        AplicarIntangibilidadJugadorConFichas(false);
+        Physics.SyncTransforms();
+    }
+
+    void RestaurarPoseFisica(Transform ficha, PoseInicialFicha pose)
+    {
+        ficha.SetPositionAndRotation(pose.posicion, pose.rotacion);
+        ficha.localScale = pose.escalaLocal;
+
+        Rigidbody rb = ficha.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.isKinematic = false;
+            rb.velocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.useGravity = true;
+            rb.Sleep();
+        }
     }
 
     void ReiniciarFicha(CampeonCombat c)
@@ -663,7 +1049,7 @@ void CrearFadeCanvas()
         var snap = c.GetComponent<CampeonSnap>();
         if (snap != null)
         {
-            snap.RestaurarPosicionOriginal();
+            snap.RestaurarEstadoInicialEscena();
             snap.DesbloquearInteraccion();
         }
     }
@@ -671,21 +1057,36 @@ void CrearFadeCanvas()
 
     void ActivarFichas()
     {
+        AplicarIntangibilidadJugadorConFichas(false);
         foreach(var c in equipo1) if(c != null) c.IniciarIA(equipo2);
         foreach(var c in equipo2) if(c != null) c.IniciarIA(equipo1);
     }
 
 
-void MostrarBotonCombate(bool visible)
+void MostrarBotonCombate(bool visible, bool interactivo = true)
 {
     if (botonPokeInteractable == null) return;
+
+    if (!visible)
+        DetenerTextoBoton();
 
     GameObject btnObj = botonPokeInteractable.gameObject;
     if (btnObj.activeSelf != visible)
         btnObj.SetActive(visible);
 
-    botonPokeInteractable.enabled = visible;
+    bool interaccionActiva = visible && interactivo;
+    botonPokeInteractable.enabled = interaccionActiva;
+
+    if (botonColliders != null)
+    {
+        foreach (Collider col in botonColliders)
+        {
+            if (col != null)
+                col.enabled = interaccionActiva;
+        }
+    }
+
     if (botonPulsoIdle != null)
-        botonPulsoIdle.SetActivo(visible && !enCombate && !combateTerminado);
+        botonPulsoIdle.SetActivo(interaccionActiva && !enCombate && !combateTerminado);
 }
 }

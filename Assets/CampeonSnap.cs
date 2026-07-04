@@ -19,30 +19,41 @@ public class CampeonSnap : MonoBehaviour
     private Camera  camaraPrincipal;
     private Vector3 posicionAnterior;
     private Quaternion rotacionAnterior;
+    private Vector3 posicionInicialEscena;
+    private Quaternion rotacionInicialEscena;
+    private bool tieneEstadoInicialEscena = false;
+    private Vector3 posicionInicioRonda;
+    private Quaternion rotacionInicioRonda;
+    private bool tieneEstadoInicioRonda = false;
 
     private BoxCollider _boxCollider;
     private Rigidbody  _rb;
     private Oculus.Interaction.PointableUnityEventWrapper _wrapper;
+    private Oculus.Interaction.Grabbable[] _grabbables;
+    private Oculus.Interaction.GrabInteractable[] _grabInteractables;
+    private Oculus.Interaction.DistanceGrabInteractable[] _distanceGrabInteractables;
+    private Oculus.Interaction.HandGrab.HandGrabInteractable[] _handGrabInteractables;
+    private Oculus.Interaction.HandGrab.DistanceHandGrabInteractable[] _distanceHandGrabInteractables;
 
-
-    // ─────────────────────────────────────────────────────
-    void Start()
+// ─────────────────────────────────────────────────────
+void Start()
     {
         camaraPrincipal  = Camera.main;
         _boxCollider     = GetComponent<BoxCollider>();
         _rb              = GetComponent<Rigidbody>();
         posicionAnterior = transform.position;
         rotacionAnterior = transform.rotation;
+        GuardarEstadoInicialEscena();
 
-        // Eliminada la lógica de escalasIniciales recursivas que rompía el escalado del combate
+        // Eliminada la logica de escalasIniciales recursivas que rompia el escalado del combate
 
         if (_boxCollider == null)
             Debug.LogWarning($"[CampeonSnap] {name}: sin BoxCollider.");
         if (tablero == null)
             Debug.LogWarning($"[CampeonSnap] {name}: campo 'tablero' no asignado.");
 
-        // Conectar eventos VR automáticamente (RNF05, RF01)
-        _wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+        // Conectar eventos VR automaticamente (RNF05, RF01)
+        CachearComponentesInteraccion();
         if (_wrapper != null)
         {
             _wrapper.WhenHover.AddListener((evt) => HoverPiezaVR());
@@ -51,20 +62,146 @@ public class CampeonSnap : MonoBehaviour
         }
     }
 
-    public void BloquearInteraccion()
+public void BloquearInteraccion()
     {
-        if (_wrapper != null) _wrapper.enabled = false;
-        var grabbable = GetComponent<Oculus.Interaction.Grabbable>();
-        if (grabbable != null) grabbable.enabled = false;
-        // NO desactivar _boxCollider aquí, porque la gravedad sigue activa durante la cinemática de transición
-        // y se caerían a través del suelo.
+        CachearComponentesInteraccion();
+        SetComponentesAgarreActivos(false);
+        // NO desactivar _boxCollider aqui, porque la gravedad sigue activa durante la cinematica de transicion
+        // y se caerian a traves del suelo.
     }
 
-    public void DesbloquearInteraccion()
+public void DesbloquearInteraccion()
     {
-        if (_wrapper != null) _wrapper.enabled = true;
-        var grabbable = GetComponent<Oculus.Interaction.Grabbable>();
-        if (grabbable != null) grabbable.enabled = true;
+        CachearComponentesInteraccion();
+        SetComponentesAgarreActivos(true);
+    }
+
+    public void GuardarEstadoInicialEscena()
+    {
+        posicionInicialEscena = transform.position;
+        rotacionInicialEscena = transform.rotation;
+        posicionAnterior = posicionInicialEscena;
+        rotacionAnterior = rotacionInicialEscena;
+        posicionInicioRonda = posicionInicialEscena;
+        rotacionInicioRonda = rotacionInicialEscena;
+        tieneEstadoInicialEscena = true;
+        tieneEstadoInicioRonda = true;
+    }
+
+    public void GuardarEstadoInicioRonda()
+    {
+        ApagarCeldaAnterior();
+        estaAgarrado = false;
+        StopAllCoroutines();
+
+        posicionInicioRonda = transform.position;
+        rotacionInicioRonda = transform.rotation;
+        posicionAnterior = posicionInicioRonda;
+        rotacionAnterior = rotacionInicioRonda;
+        tieneEstadoInicioRonda = true;
+
+        AplicarPoseFisica(posicionInicioRonda, rotacionInicioRonda);
+    }
+
+    public void RestaurarEstadoInicioRonda()
+    {
+        if (!tieneEstadoInicioRonda)
+        {
+            RestaurarEstadoInicialEscena();
+            return;
+        }
+
+        posicionAnterior = posicionInicioRonda;
+        rotacionAnterior = rotacionInicioRonda;
+        AplicarPoseFisica(posicionInicioRonda, rotacionInicioRonda);
+    }
+
+    public void RestaurarEstadoInicialEscena()
+    {
+        if (!tieneEstadoInicialEscena)
+            GuardarEstadoInicialEscena();
+
+        posicionAnterior = posicionInicialEscena;
+        rotacionAnterior = rotacionInicialEscena;
+        posicionInicioRonda = posicionInicialEscena;
+        rotacionInicioRonda = rotacionInicialEscena;
+        tieneEstadoInicioRonda = true;
+
+        AplicarPoseFisica(posicionInicialEscena, rotacionInicialEscena);
+    }
+
+    public void RestaurarEstadoInicialForzado(Vector3 posicion, Quaternion rotacion)
+    {
+        posicionInicialEscena = posicion;
+        rotacionInicialEscena = rotacion;
+        posicionAnterior = posicion;
+        rotacionAnterior = rotacion;
+        posicionInicioRonda = posicion;
+        rotacionInicioRonda = rotacion;
+        tieneEstadoInicialEscena = true;
+        tieneEstadoInicioRonda = true;
+
+        AplicarPoseFisica(posicion, rotacion);
+    }
+
+    void CachearComponentesInteraccion()
+    {
+        _wrapper = GetComponent<Oculus.Interaction.PointableUnityEventWrapper>();
+        _grabbables = GetComponentsInChildren<Oculus.Interaction.Grabbable>(true);
+        _grabInteractables = GetComponentsInChildren<Oculus.Interaction.GrabInteractable>(true);
+        _distanceGrabInteractables = GetComponentsInChildren<Oculus.Interaction.DistanceGrabInteractable>(true);
+        _handGrabInteractables = GetComponentsInChildren<Oculus.Interaction.HandGrab.HandGrabInteractable>(true);
+        _distanceHandGrabInteractables = GetComponentsInChildren<Oculus.Interaction.HandGrab.DistanceHandGrabInteractable>(true);
+        RepararReticulasDistancia();
+    }
+
+    void RepararReticulasDistancia()
+    {
+        Behaviour[] behaviours = GetComponentsInChildren<Behaviour>(true);
+        foreach (Behaviour behaviour in behaviours)
+        {
+            if (behaviour == null) continue;
+
+            System.Type type = behaviour.GetType();
+            if (type.FullName != "Oculus.Interaction.DistanceReticles.ReticleDataMesh")
+                continue;
+
+            System.Reflection.FieldInfo filterField = type.GetField(
+                "_filter",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            if (filterField == null) continue;
+
+            MeshFilter filter = filterField.GetValue(behaviour) as MeshFilter;
+            if (filter == null)
+            {
+                filter = behaviour.GetComponent<MeshFilter>();
+                if (filter == null)
+                    filter = behaviour.gameObject.AddComponent<MeshFilter>();
+
+                filterField.SetValue(behaviour, filter);
+            }
+        }
+    }
+
+    void SetComponentesAgarreActivos(bool activo)
+    {
+        if (_wrapper != null) _wrapper.enabled = activo;
+        SetEnabled(_grabbables, activo);
+        SetEnabled(_grabInteractables, activo);
+        SetEnabled(_distanceGrabInteractables, activo);
+        SetEnabled(_handGrabInteractables, activo);
+        SetEnabled(_distanceHandGrabInteractables, activo);
+    }
+
+    void SetEnabled<T>(T[] componentes, bool activo) where T : Behaviour
+    {
+        if (componentes == null) return;
+        foreach (var componente in componentes)
+        {
+            if (componente != null)
+                componente.enabled = activo;
+        }
     }
 
     // Devuelve la pieza a la ultima posicion/rotacion en la que fue colocada
@@ -72,19 +209,26 @@ public class CampeonSnap : MonoBehaviour
     // lista para volver a ser agarrada (fisica no-kinematica).
     public void RestaurarPosicionOriginal()
     {
+        AplicarPoseFisica(posicionAnterior, rotacionAnterior);
+    }
+
+    void AplicarPoseFisica(Vector3 posicion, Quaternion rotacion)
+    {
         ApagarCeldaAnterior();
         estaAgarrado = false;
+        StopAllCoroutines();
 
-        transform.position = posicionAnterior;
-        transform.rotation = rotacionAnterior;
-
+        transform.SetPositionAndRotation(posicion, rotacion);
         if (_rb != null)
         {
+            _rb.isKinematic = false;
             _rb.velocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
-            _rb.isKinematic = false;
             _rb.useGravity = true;
+            _rb.Sleep();
         }
+
+        Physics.SyncTransforms();
     }
 
     // ─────────────────────────────────────────────────────

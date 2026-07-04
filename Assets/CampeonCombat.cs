@@ -47,6 +47,18 @@ public class CampeonCombat : MonoBehaviour
     public float duracionDesvanecerMuerte = 0.85f;
     public bool ocultarRenderersAlMorir = true;
 
+    [Header("VFX de Combate")]
+    public bool usarVFXCombate = true;
+    public bool mostrarNumerosDanio = true;
+    public Color colorNumeroDanio = new Color(1f, 0.58f, 0.18f, 1f);
+    public Color colorBordeNumeroDanio = new Color(0.15f, 0.055f, 0.015f, 0.92f);
+    public Color colorFlashDanio = new Color(1f, 0.62f, 0.28f, 1f);
+    public float duracionFlashDanio = 0.07f;
+    public float duracionNumeroDanio = 0.72f;
+    public float escalaNumeroDanio = 0.032f;
+    public float subidaNumeroDanio = 0.18f;
+    public float dispersionNumeroDanio = 0.035f;
+
     // Registro global de combatientes activos, para la separacion entre unidades
     private static readonly List<CampeonCombat> _combatientesActivos = new List<CampeonCombat>();
     private static float _minX, _maxX, _minZ, _maxZ;
@@ -103,6 +115,12 @@ public class CampeonCombat : MonoBehaviour
     private Coroutine _fadeMuerteCoroutine;
     private bool _materialesPreparadosParaFade = false;
     private bool _visualesOcultosPorMuerte = false;
+    private Coroutine _flashDanioCoroutine;
+    private readonly List<GameObject> _vfxTemporales = new List<GameObject>();
+    private MaterialPropertyBlock _vfxPropertyBlock;
+    private static Material _materialParticulasVFX;
+    private static Material _materialLineaVFX;
+    private static Texture2D _texturaParticulaVFX;
 
     class MaterialRuntimeState
     {
@@ -897,6 +915,7 @@ public class CampeonCombat : MonoBehaviour
         yield return new WaitForSeconds(delay);
         if (!estaMuerto && target != null && !target.estaMuerto)
         {
+            target.ReproducirImpacto(dmg);
             target.RecibirDaño(dmg);
         }
     }
@@ -905,11 +924,425 @@ public class CampeonCombat : MonoBehaviour
     {
         if (estaMuerto) return;
 
+        IniciarFlashDanio();
         vidaActual -= dmg;
         if (vidaActual <= 0)
         {
             Morir();
         }
+    }
+
+    void ReproducirEstelaAtaque(CampeonCombat target)
+    {
+        // Intencionalmente sin estelas: en VR se veian artificiales y tapaban la pelea.
+    }
+
+    void ReproducirImpacto(float dmg)
+    {
+        if (!usarVFXCombate) return;
+
+        if (mostrarNumerosDanio)
+            CrearNumeroDanio(dmg);
+    }
+
+    void ReproducirPulsoMuerte()
+    {
+        // La muerte ya se comunica con el desvanecido del cuerpo.
+    }
+
+    void CrearNumeroDanio(float dmg)
+    {
+        int valor = Mathf.Max(1, Mathf.RoundToInt(dmg));
+        Vector3 posicion = ObtenerPuntoVFX()
+            + Vector3.up * 0.03f
+            + new Vector3(
+                Random.Range(-dispersionNumeroDanio, dispersionNumeroDanio),
+                0f,
+                Random.Range(-dispersionNumeroDanio, dispersionNumeroDanio));
+
+        GameObject go = new GameObject("VFX_NumeroDanio");
+        go.transform.position = posicion;
+
+        TMPro.TextMeshPro texto = go.AddComponent<TMPro.TextMeshPro>();
+        texto.text = valor.ToString();
+        texto.alignment = TMPro.TextAlignmentOptions.Center;
+        texto.fontStyle = TMPro.FontStyles.Bold;
+        texto.fontSize = 8f;
+        texto.enableWordWrapping = false;
+        texto.color = colorNumeroDanio;
+        texto.outlineWidth = 0.22f;
+        texto.outlineColor = colorBordeNumeroDanio;
+        texto.sortingOrder = 20;
+        texto.ForceMeshUpdate();
+
+        go.transform.localScale = Vector3.one * escalaNumeroDanio;
+        OrientarNumeroDanio(go.transform);
+        _vfxTemporales.Add(go);
+        StartCoroutine(AnimarNumeroDanio(go, texto, posicion));
+    }
+
+    IEnumerator AnimarNumeroDanio(GameObject go, TMPro.TextMeshPro texto, Vector3 posicionInicial)
+    {
+        float duracion = Mathf.Max(0.15f, duracionNumeroDanio);
+        float t = 0f;
+        Color colorTexto = colorNumeroDanio;
+        Color colorBorde = colorBordeNumeroDanio;
+
+        while (t < duracion && go != null && texto != null)
+        {
+            t += Time.deltaTime;
+            float normalizado = Mathf.Clamp01(t / duracion);
+            float alpha = normalizado < 0.62f
+                ? 1f
+                : 1f - Mathf.Clamp01((normalizado - 0.62f) / 0.38f);
+            float pop = normalizado < 0.16f
+                ? Mathf.Lerp(1.22f, 1f, normalizado / 0.16f)
+                : 1f;
+
+            go.transform.position = posicionInicial + Vector3.up * (subidaNumeroDanio * Mathf.SmoothStep(0f, 1f, normalizado));
+            go.transform.localScale = Vector3.one * escalaNumeroDanio * pop;
+            OrientarNumeroDanio(go.transform);
+
+            colorTexto.a = alpha;
+            colorBorde.a = colorBordeNumeroDanio.a * alpha;
+            texto.color = colorTexto;
+            texto.outlineColor = colorBorde;
+
+            yield return null;
+        }
+
+        if (go != null)
+        {
+            _vfxTemporales.Remove(go);
+            DestruirVFXTemporal(go);
+        }
+    }
+
+    void OrientarNumeroDanio(Transform textoTransform)
+    {
+        Camera camara = Camera.main;
+        if (camara == null || textoTransform == null) return;
+
+        Vector3 haciaCamara = textoTransform.position - camara.transform.position;
+        if (haciaCamara.sqrMagnitude > 0.0001f)
+            textoTransform.rotation = Quaternion.LookRotation(haciaCamara.normalized, Vector3.up);
+    }
+
+    Vector3 ObtenerPuntoVFX()
+    {
+        CacheVisualesIniciales();
+
+        Bounds bounds = new Bounds(transform.position + Vector3.up * 0.08f, Vector3.one * 0.05f);
+        bool tieneBounds = false;
+        if (_renderersVisuales != null)
+        {
+            foreach (Renderer renderer in _renderersVisuales)
+            {
+                if (renderer == null || !renderer.enabled) continue;
+                if (!tieneBounds)
+                {
+                    bounds = renderer.bounds;
+                    tieneBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+        }
+
+        return tieneBounds
+            ? bounds.center + Vector3.up * Mathf.Min(0.08f, bounds.extents.y * 0.35f)
+            : transform.position + Vector3.up * 0.12f;
+    }
+
+    void CrearParticulasVFX(string nombre, Vector3 posicion, Color color, float escala, int cantidad, float destruirEn, bool esMuerte)
+    {
+        GameObject go = new GameObject(nombre);
+        go.transform.position = posicion;
+        go.transform.rotation = Quaternion.Euler(
+            Random.Range(-18f, 18f),
+            Random.Range(0f, 360f),
+            Random.Range(-18f, 18f));
+
+        ParticleSystem particulas = go.AddComponent<ParticleSystem>();
+        particulas.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = particulas.main;
+        main.loop = false;
+        main.duration = esMuerte ? 0.42f : 0.16f;
+        main.startLifetime = esMuerte
+            ? new ParticleSystem.MinMaxCurve(0.34f, 0.68f)
+            : new ParticleSystem.MinMaxCurve(0.10f, 0.24f);
+        main.startSpeed = esMuerte
+            ? new ParticleSystem.MinMaxCurve(0.06f, 0.24f)
+            : new ParticleSystem.MinMaxCurve(0.25f, 0.78f);
+        main.startSize = esMuerte
+            ? new ParticleSystem.MinMaxCurve(escala * 0.35f, escala * 0.95f)
+            : new ParticleSystem.MinMaxCurve(escala * 0.10f, escala * 0.30f);
+        main.startColor = color;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.gravityModifier = esMuerte ? -0.02f : 0.12f;
+        main.maxParticles = 64;
+
+        var emission = particulas.emission;
+        emission.rateOverTime = 0f;
+        emission.SetBursts(new ParticleSystem.Burst[]
+        {
+            new ParticleSystem.Burst(0f, (short)Mathf.Clamp(cantidad, 1, esMuerte ? 32 : 24))
+        });
+
+        var shape = particulas.shape;
+        shape.enabled = true;
+        shape.shapeType = esMuerte ? ParticleSystemShapeType.Sphere : ParticleSystemShapeType.Cone;
+        shape.radius = Mathf.Max(0.012f, escala * (esMuerte ? 0.48f : 0.18f));
+        shape.randomDirectionAmount = esMuerte ? 0.45f : 0.22f;
+        if (!esMuerte)
+            shape.angle = 38f;
+
+        var sizeOverLifetime = particulas.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        AnimationCurve curvaTamano = new AnimationCurve();
+        curvaTamano.AddKey(0f, esMuerte ? 0.45f : 0.20f);
+        curvaTamano.AddKey(0.16f, 1f);
+        curvaTamano.AddKey(1f, 0f);
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, curvaTamano);
+
+        var colorOverLifetime = particulas.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        colorOverLifetime.color = new ParticleSystem.MinMaxGradient(CrearGradienteParticulas(color, esMuerte));
+
+        var noise = particulas.noise;
+        noise.enabled = true;
+        noise.quality = ParticleSystemNoiseQuality.Low;
+        noise.strength = esMuerte ? 0.030f : 0.018f;
+        noise.frequency = esMuerte ? 2.4f : 7.0f;
+        noise.scrollSpeed = esMuerte ? 0.18f : 0.32f;
+
+        ParticleSystemRenderer renderer = particulas.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = esMuerte ? ParticleSystemRenderMode.Billboard : ParticleSystemRenderMode.Stretch;
+        renderer.lengthScale = esMuerte ? 1f : 1.65f;
+        renderer.velocityScale = esMuerte ? 0f : 0.24f;
+        renderer.maxParticleSize = esMuerte ? 0.075f : 0.035f;
+        renderer.sharedMaterial = ObtenerMaterialParticulasVFX();
+
+        particulas.Play();
+        Destroy(go, destruirEn);
+    }
+
+    void IniciarFlashDanio()
+    {
+        if (!usarVFXCombate || duracionFlashDanio <= 0f) return;
+
+        if (_flashDanioCoroutine != null)
+            StopCoroutine(_flashDanioCoroutine);
+
+        _flashDanioCoroutine = StartCoroutine(FlashDanio());
+    }
+
+    IEnumerator FlashDanio()
+    {
+        CacheVisualesIniciales();
+
+        float duracion = Mathf.Max(0.03f, duracionFlashDanio);
+        float t = 0f;
+        while (t < duracion)
+        {
+            t += Time.deltaTime;
+            float intensidad = 1f - Mathf.Clamp01(t / duracion);
+            AplicarFlashDanio(intensidad);
+            yield return null;
+        }
+
+        LimpiarFlashDanio();
+        _flashDanioCoroutine = null;
+    }
+
+    void AplicarFlashDanio(float intensidad)
+    {
+        if (_renderersVisuales == null) return;
+        if (_vfxPropertyBlock == null)
+            _vfxPropertyBlock = new MaterialPropertyBlock();
+
+        float intensidadSuave = Mathf.Clamp01(intensidad) * 0.45f;
+        Color color = Color.Lerp(Color.white, colorFlashDanio, intensidadSuave);
+        Color emision = colorFlashDanio * Mathf.Lerp(0f, 0.45f, intensidadSuave);
+
+        foreach (Renderer renderer in _renderersVisuales)
+        {
+            if (renderer == null || !renderer.enabled) continue;
+
+            renderer.GetPropertyBlock(_vfxPropertyBlock);
+            if (RendererTienePropiedad(renderer, "_BaseColor"))
+                _vfxPropertyBlock.SetColor("_BaseColor", color);
+            if (RendererTienePropiedad(renderer, "_Color"))
+                _vfxPropertyBlock.SetColor("_Color", color);
+            if (RendererTienePropiedad(renderer, "_EmissionColor"))
+                _vfxPropertyBlock.SetColor("_EmissionColor", emision);
+
+            renderer.SetPropertyBlock(_vfxPropertyBlock);
+        }
+    }
+
+    void LimpiarFlashDanio()
+    {
+        if (_renderersVisuales == null) return;
+        foreach (Renderer renderer in _renderersVisuales)
+        {
+            if (renderer != null)
+                renderer.SetPropertyBlock(null);
+        }
+    }
+
+    void DetenerFlashDanio()
+    {
+        if (_flashDanioCoroutine != null)
+        {
+            StopCoroutine(_flashDanioCoroutine);
+            _flashDanioCoroutine = null;
+        }
+
+        LimpiarFlashDanio();
+    }
+
+    void LimpiarVFXTemporales()
+    {
+        for (int i = _vfxTemporales.Count - 1; i >= 0; i--)
+        {
+            if (_vfxTemporales[i] != null)
+                DestruirVFXTemporal(_vfxTemporales[i]);
+        }
+
+        _vfxTemporales.Clear();
+    }
+
+    void DestruirVFXTemporal(GameObject go)
+    {
+        if (go == null) return;
+
+        if (Application.isPlaying)
+            Destroy(go);
+        else
+            DestroyImmediate(go);
+    }
+
+    bool RendererTienePropiedad(Renderer renderer, string propiedad)
+    {
+        if (renderer == null || renderer.sharedMaterials == null) return false;
+
+        foreach (Material material in renderer.sharedMaterials)
+        {
+            if (material != null && material.HasProperty(propiedad))
+                return true;
+        }
+
+        return false;
+    }
+
+    Gradient CrearGradienteLinea(Color color)
+    {
+        Gradient gradiente = new Gradient();
+        gradiente.SetKeys(
+            new GradientColorKey[]
+            {
+                new GradientColorKey(Color.Lerp(Color.white, color, 0.35f), 0f),
+                new GradientColorKey(color, 0.35f),
+                new GradientColorKey(Color.Lerp(color, Color.black, 0.25f), 1f)
+            },
+            new GradientAlphaKey[]
+            {
+                new GradientAlphaKey(0f, 0f),
+                new GradientAlphaKey(0.85f, 0.18f),
+                new GradientAlphaKey(0.12f, 0.72f),
+                new GradientAlphaKey(0f, 1f)
+            });
+
+        return gradiente;
+    }
+
+    Gradient CrearGradienteParticulas(Color color, bool esMuerte)
+    {
+        Gradient gradiente = new Gradient();
+        Color inicio = esMuerte ? Color.Lerp(Color.white, color, 0.55f) : new Color(1f, 0.86f, 0.54f, 1f);
+        Color medio = color;
+        Color final = esMuerte ? Color.Lerp(color, Color.black, 0.55f) : Color.Lerp(color, new Color(0.35f, 0.05f, 0.02f, 1f), 0.35f);
+
+        gradiente.SetKeys(
+            new GradientColorKey[]
+            {
+                new GradientColorKey(inicio, 0f),
+                new GradientColorKey(medio, esMuerte ? 0.38f : 0.22f),
+                new GradientColorKey(final, 1f)
+            },
+            new GradientAlphaKey[]
+            {
+                new GradientAlphaKey(esMuerte ? 0.55f : 0.92f, 0f),
+                new GradientAlphaKey(esMuerte ? 0.36f : 0.70f, esMuerte ? 0.45f : 0.25f),
+                new GradientAlphaKey(0f, 1f)
+            });
+
+        return gradiente;
+    }
+
+    static Material ObtenerMaterialParticulasVFX()
+    {
+        if (_materialParticulasVFX != null) return _materialParticulasVFX;
+
+        Shader shader = Shader.Find("Particles/Standard Unlit");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        if (shader == null) shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+
+        _materialParticulasVFX = new Material(shader);
+        if (_materialParticulasVFX.HasProperty("_Color"))
+            _materialParticulasVFX.SetColor("_Color", Color.white);
+        if (_materialParticulasVFX.HasProperty("_MainTex"))
+            _materialParticulasVFX.SetTexture("_MainTex", ObtenerTexturaParticulaVFX());
+
+        return _materialParticulasVFX;
+    }
+
+    static Material ObtenerMaterialLineaVFX()
+    {
+        if (_materialLineaVFX != null) return _materialLineaVFX;
+
+        Shader shader = Shader.Find("Sprites/Default");
+        if (shader == null) shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Hidden/Internal-Colored");
+
+        _materialLineaVFX = new Material(shader);
+        if (_materialLineaVFX.HasProperty("_Color"))
+            _materialLineaVFX.SetColor("_Color", Color.white);
+
+        return _materialLineaVFX;
+    }
+
+    static Texture2D ObtenerTexturaParticulaVFX()
+    {
+        if (_texturaParticulaVFX != null) return _texturaParticulaVFX;
+
+        const int size = 32;
+        Texture2D textura = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        textura.wrapMode = TextureWrapMode.Clamp;
+        textura.filterMode = FilterMode.Bilinear;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float nx = (x + 0.5f) / size * 2f - 1f;
+                float ny = (y + 0.5f) / size * 2f - 1f;
+                float dist = Mathf.Sqrt(nx * nx + ny * ny);
+                float alpha = Mathf.Clamp01(1f - dist);
+                alpha = alpha * alpha * (3f - 2f * alpha);
+
+                float ruido = 0.92f + 0.08f * Mathf.Sin((x * 12.9898f + y * 78.233f) * 0.35f);
+                textura.SetPixel(x, y, new Color(1f, 1f, 1f, alpha * ruido));
+            }
+        }
+
+        textura.Apply(false, true);
+        _texturaParticulaVFX = textura;
+        return _texturaParticulaVFX;
     }
 
     void CacheVisualesIniciales()
@@ -1137,6 +1570,8 @@ public class CampeonCombat : MonoBehaviour
         EstadoActual = CombatState.Dead;
         _combatientesActivos.Remove(this);
         BloquearColisionesPorMuerte();
+        DetenerFlashDanio();
+        ReproducirPulsoMuerte();
         
         string triggerMuerte = "Death";
         if (gameObject.name.Contains("mordekaiser")) triggerMuerte = "Death.001";
@@ -1157,7 +1592,10 @@ public class CampeonCombat : MonoBehaviour
     public void ReiniciarCombate()
     {
         StopAllCoroutines();
+        LimpiarVFXTemporales();
         _fadeMuerteCoroutine = null;
+        _flashDanioCoroutine = null;
+        LimpiarFlashDanio();
         RestaurarVisualesMuerte();
         RestaurarColisionesIniciales();
 
@@ -1189,5 +1627,6 @@ public class CampeonCombat : MonoBehaviour
     void OnDisable()
     {
         _combatientesActivos.Remove(this);
+        LimpiarVFXTemporales();
     }
 }
